@@ -1,0 +1,22 @@
+{
+  "name": "class-management",
+  "version": "1.0.0",
+  "description": "A Node.js application to manage class.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.17.1",
+    "jsonwebtoken": "^9.0.2",
+    "mysql": "^2.18.1",
+    "mysql2": "^3.14.1",
+    "node-cron": "^2.0.3",
+    "node-fetch": "^2.6.1"
+  },
+  "author": "",
+  "license": "ISC"
+}
