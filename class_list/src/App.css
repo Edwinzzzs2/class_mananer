@@ -1,0 +1,572 @@
+@import '~antd/dist/antd.css';
+
+.App {
+  text-align: center;
+  background-color: #f0f2f5;
+  min-height: 100vh;
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+}
+
+/* 移除未使用的样式 */
+.App-logo, .App-header, .App-link {
+  display: none;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 上传区域样式 */
+.ant-upload-wrapper {
+  margin: 20px auto;
+  text-align: center;
+}
+
+.upload-area {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 卡片样式 */
+.ant-card {
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.ant-card-head {
+  background-color: #f7f7f7;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+/* 标签样式 */
+.ant-tag {
+  margin: 3px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 13px!important;
+}
+
+/* 教师卡片样式 */
+.teacher-card {
+  margin-bottom: 16px;
+  transition: all 0.3s;
+}
+
+.teacher-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* 时间段标签样式 */
+.time-slot-tag {
+  background-color: #e6f7ff;
+  color: #1890ff;
+  border: 1px solid #91d5ff;
+  font-weight: bold;
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+/* 课位数量样式 */
+.available-slots {
+  color: #52c41a;
+  font-weight: bold;
+}
+
+.filled-slots {
+  color: #fa8c16;
+  font-weight: bold;
+}
+
+/* 学生标签样式 */
+.student-tag {
+  margin: 3px;
+  font-size: 12px;
+  padding: 2px 6px;
+  line-height: 1.5;
+  border-radius: 4px;
+}
+
+/* 标题样式 */
+.header-title {
+  color: #1890ff;
+  margin-bottom: 24px;
+  position: relative;
+  display: inline-block;
+}
+
+.header-title::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, #1890ff, #52c41a);
+  border-radius: 3px;
+}
+
+/* 表格样式 */
+.ant-table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ant-table-thead > tr > th {
+  background-color: #f7f7f7;
+  font-weight: bold;
+}
+
+/* 按钮样式 */
+.ant-btn-primary {
+  background-color: #1890ff;
+  border-color: #1890ff;
+}
+
+.ant-btn-primary:hover {
+  background-color: #40a9ff;
+  border-color: #40a9ff;
+}
+
+/* 抽屉样式 */
+.ant-drawer-content-wrapper {
+  width: 450px !important;
+}
+
+.ant-drawer-header {
+  background-color: #f7f7f7;
+}
+
+/* 视图切换按钮组 */
+.view-switch {
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+/* 分隔线样式 */
+.ant-divider {
+  margin: 16px 0;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+
+  .App {
+    padding: 4vw !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+  .side-title {
+    font-size: 1.2rem;
+    text-align: center;
+    margin-bottom: 12px;
+    letter-spacing: 2px;
+  }
+  .ant-btn, .ant-upload, .ant-input, .ant-select, .ant-tag {
+    font-size: 13px !important;
+    padding: 0 8px !important;
+    height: 32px !important;
+  }
+  .ant-btn {
+    margin-bottom: 8px !important;
+    min-width: 90px;
+  }
+  .ant-card, .ant-table-wrapper {
+    width: 100% !important;
+    max-width: 100vw !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-sizing: border-box;
+  }
+  .ant-table {
+    font-size: 14px !important;
+  }
+  .ant-table-content {
+    overflow-x: auto !important;
+  }
+  .ant-table-thead > tr > th, .ant-table-tbody > tr > td {
+    padding: 6px 4px !important;
+    white-space: nowrap;
+  }
+  .ant-tag {
+    margin-bottom: 4px !important;
+    max-width: 90vw !important;
+    word-break: break-all;
+  }
+  .ant-form-item-label > label {
+    font-size: 13px !important;
+  }
+  .ant-divider {
+    margin: 8px 0 !important;
+  }
+  /* 让按钮区自动换行 */
+  .ant-space, .button-group {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+  /* 新增：主内容区和按钮区移动端分两行 */
+  .main-content-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+  }
+  .button-group-mobile {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+    justify-content: center;
+  }
+  .merge-group-list {
+    display: block;
+  }
+  .merge-group-tag {
+    display: block !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    margin-bottom: 10px !important;
+    text-align: center;
+  }
+  .no-class-tag-list {
+    width: 100vw;
+    max-width: 100vw;
+  }
+  .no-class-tag-list .ant-tag {
+    width: auto;
+    min-width: 90px;
+    font-size: 16px;
+  }
+  .no-class-row {
+    flex-wrap: nowrap;
+    gap: 2px;
+    margin-bottom: 6px;
+  }
+  .no-class-teacher {
+    min-width: 48px;
+    font-size: 13px;
+    margin-right: 2px;
+  }
+  .no-class-tag-scroll {
+    flex: 1;
+    overflow-x: auto;
+    white-space: nowrap;
+    gap: 2px;
+    margin: 0 2px;
+    display: flex;
+    flex-wrap: nowrap;
+  }
+  .no-class-tag-scroll .ant-tag {
+    min-width: 60px;
+    font-size: 16px;
+    padding: 2px 6px;
+  }
+  .no-class-edit-btn {
+    font-size: 16px;
+    margin-left: 2px;
+  }
+}
+
+/* 表格内部卡片样式 */
+.table-card {
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  padding: 8px;
+}
+
+/* 步骤条样式 */
+.ant-steps-item-description {
+  max-width: 250px !important;
+}
+
+/* 帮助区域样式 */
+.help-section ul {
+  padding-left: 20px;
+  text-align: left;
+}
+
+.help-section li {
+  margin-bottom: 8px;
+}
+
+/* 教师课程详情页样式 */
+.stats-card {
+  margin-bottom: 16px;
+  background-color: #fafafa;
+  border-radius: 8px;
+}
+
+.time-slot-card {
+  margin-bottom: 16px;
+  height: 100%;
+  transition: all 0.3s;
+}
+
+.time-slot-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.time-slot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.slot-details {
+  padding: 12px 0;
+  border-bottom: 1px dashed #f0f0f0;
+  margin-bottom: 12px;
+}
+
+.slot-details:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.slot-status {
+  margin-bottom: 12px;
+}
+
+.slot-count {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.slot-indicator {
+  height: 6px;
+  background-color: #e8e8e8;
+  border-radius: 3px;
+  position: relative;
+}
+
+.students-container {
+  margin-top: 12px;
+}
+
+.student-list {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.vacancy-list {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  background-color: rgba(82, 196, 26, 0.05);
+  border-radius: 4px;
+  padding: 4px;
+}
+
+/* 时间段视图样式优化 */
+.time-slot-view-container {
+  margin-bottom: 24px;
+}
+
+.time-slot-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #1890ff;
+  margin-bottom: 12px;
+}
+
+/* 表格行样式 */
+.teacher-row:hover {
+  background-color: #f0f7ff !important;
+}
+
+/* 时间段视图样式 */
+.time-slot-students {
+  display: flex;
+  flex-direction: column;
+}
+
+.time-slot-table .ant-table-tbody > tr:hover > td {
+  background-color: #f0f7ff;
+}
+
+.time-slot-title {
+  display: flex;
+  align-items: center;
+}
+
+.time-slot-card .ant-card-head {
+  border-bottom: 2px solid #f0f0f0;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+/* 更多响应式调整 */
+@media (max-width: 576px) {
+  .slot-indicator {
+    height: 4px;
+  }
+  
+  .student-tag {
+    font-size: 10px;
+    padding: 1px 4px;
+  }
+  
+  .ant-statistic-title {
+    font-size: 12px;
+  }
+  
+  .ant-statistic-content {
+    font-size: 20px;
+  }
+}
+
+/* 帮助指南样式 */
+.help-guide {
+  padding: 0 10px;
+}
+
+.help-steps .ant-steps-item-content {
+  margin-left: 12px;
+}
+
+.help-card {
+  margin-bottom: 8px;
+  background-color: #fafafa;
+  border-radius: 4px;
+}
+
+.tag-list .ant-list-item {
+  padding: 8px 16px;
+}
+
+.ant-drawer-body {
+  padding: 16px;
+}
+
+.help-section ul {
+  padding-left: 20px;
+  margin-top: 8px;
+  margin-bottom: 16px;
+}
+
+.help-section li {
+  margin-bottom: 8px;
+  line-height: 1.6;
+}
+
+/* 修复图标垂直对齐 */
+.ant-steps-item-icon {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 标题横排样式 */
+.side-title {
+  font-weight: bold;
+  color: #1677ff;
+  font-size: 2.2rem;
+  line-height: 1.1;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+/* 合并关系Tag区响应式排列 */
+.merge-group-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  max-width: 100vw;
+}
+.merge-group-tag {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap !important;
+  overflow-x: auto !important;
+  margin-bottom: 8px !important;
+  text-align: center;
+  min-width: 120px;
+  background: #faf6ff;
+  border: 1px solid #e6d6fa;
+  border-radius: 6px;
+  box-sizing: border-box;
+  padding: 4px 12px;
+}
+
+/* 无课时设置Tag横向滚动，字体居中 */
+.no-class-tag-list {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+  padding-bottom: 2px;
+}
+.no-class-tag-list .ant-tag {
+  text-align: center;
+  min-width: 90px;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* PC端：无课时设置横向排列，Tag自动换行 */
+.no-class-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+  gap: 8px;
+  width: 100%;
+}
+.no-class-teacher {
+  font-weight: 600;
+  min-width: 60px;
+  text-align: right;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+.no-class-tag-scroll {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.no-class-tag-scroll .ant-tag {
+  text-align: center;
+  min-width: 70px;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+  padding: 2px 8px;
+}
+.no-class-edit-btn {
+  flex-shrink: 0;
+  margin-left: 4px;
+  white-space: nowrap;
+  color: #1890ff;
+  font-weight: 700;
+  padding: 0;
+  height: auto;
+  line-height: 1;
+}
+
+.ant-collapse > .ant-collapse-item > .ant-collapse-header .ant-collapse-header-text {
+  flex: none
+}
