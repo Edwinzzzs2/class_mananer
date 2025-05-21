@@ -1,7 +1,9 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { init } = require('./db');
 const scheduleRoutes = require('./routes/schedule');
+const kdocsExportRouter = require('./routes/kdocsExport');
 const config = require('./config');
 
 const app = express();
@@ -13,6 +15,7 @@ app.use(express.json());
 
 // 路由
 app.use('/schedule', scheduleRoutes);
+app.use('/schedule', kdocsExportRouter);
 
 // 初始化数据库并启动服务器
 init()
