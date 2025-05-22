@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
+const XLSX = require('xlsx');
 
 // 请将你的cookie和csrf值配置在环境变量或安全存储中
 const KDOCS_COOKIE = process.env.KDOCS_COOKIE || '';
@@ -115,6 +116,68 @@ router.post('/kdocs-direct-download', async (req, res) => {
       // 兼容axios抛出重定向异常
       return res.json({ code: 0, url: err.response.headers.location });
     }
+    return res.status(500).json({ code: 500, message: '流程出错', error: err.message });
+  }
+});
+
+// 直接获取下载url并解析Excel的接口
+router.post('/kdocs-direct-download-and-parse', async (req, res) => {
+  const { url, referer } = req.body;
+  if (!url) {
+    return res.status(400).json({ code: 400, message: '请提供金山在线云文档URL' });
+  }
+  // 提取文档ID
+  let docId;
+  try {
+    if (url.includes('/l/')) {
+      docId = url.split('/l/')[1].split('?')[0];
+    } else if (url.includes('/view/')) {
+      docId = url.split('/view/')[1].split('?')[0];
+    } else {
+      docId = url.split('/').pop().split('?')[0];
+    }
+    if (!docId || docId.length < 5) throw new Error('无效的文档ID');
+  } catch (e) {
+    return res.status(400).json({ code: 400, message: '无效的金山在线云文档链接，请确保链接格式正确' });
+  }
+  try {
+    // 1. 获取下载url
+    const downloadUrl = `https://www.kdocs.cn/api/v3/office/file/${docId}/download`;
+    const headers = {
+      'accept': 'application/json, text/plain, */*',
+      'cookie': KDOCS_COOKIE,
+      'referer': referer || `https://www.kdocs.cn/l/${docId}`,
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0',
+      'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
+      'priority': 'u=1, i',
+      'sec-ch-ua': '"Microsoft Edge";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-origin',
+      'x-forward-region': 'hwy',
+    };
+    const axiosRes = await axios.get(downloadUrl, { headers, maxRedirects: 0, validateStatus: s => s >= 200 && s < 400 });
+    let finalDownloadUrl;
+    if (axiosRes.status === 302 && axiosRes.headers.location) {
+      finalDownloadUrl = axiosRes.headers.location;
+    } else if (axiosRes.status === 200 && axiosRes.request.res.responseUrl) {
+      finalDownloadUrl = axiosRes.request.res.responseUrl;
+    } else if (axiosRes.data && (axiosRes.data.download_url || axiosRes.data.url)) {
+      finalDownloadUrl = axiosRes.data.download_url || axiosRes.data.url;
+    } else {
+      return res.status(500).json({ code: 500, message: '未能获取到下载url', detail: axiosRes.data });
+    }
+    // 2. 下载并解析Excel
+    const fileRes = await axios.get(finalDownloadUrl, { responseType: 'arraybuffer' });
+    const workbook = XLSX.read(fileRes.data, { type: 'array' });
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+    const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    const filteredData = data.filter(row => row.some(cell => cell !== null && cell !== ''));
+    return res.json({ code: 0, message: '解析成功，数据已更新', data: filteredData });
+  } catch (err) {
     return res.status(500).json({ code: 500, message: '流程出错', error: err.message });
   }
 });

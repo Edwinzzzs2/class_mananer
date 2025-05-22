@@ -51,7 +51,8 @@ router.post('/save', async (req, res) => {
             teacher_stats = ?, 
             merge_map = ?, 
             no_class_map = ?,
-            file_name = ?
+            file_name = ?,
+            url = ?
         WHERE id = ?`;
 
       connection.query(updateQuery, [
@@ -60,6 +61,7 @@ router.post('/save', async (req, res) => {
         JSON.stringify(mergeMap),
         JSON.stringify(noClassMap),
         fileName,
+        req.body.url,
         id
       ], (error, results) => {
         if (error) {
@@ -80,15 +82,16 @@ router.post('/save', async (req, res) => {
       // 新建操作
       const insertQuery = `
         INSERT INTO schedules 
-        (excel_data, teacher_stats, merge_map, no_class_map, file_name)
-        VALUES (?, ?, ?, ?, ?)`;
+        (excel_data, teacher_stats, merge_map, no_class_map, file_name, url)
+        VALUES (?, ?, ?, ?, ?, ?)`;
 
       connection.query(insertQuery, [
         JSON.stringify(excelData),
         JSON.stringify(teacherStats),
         JSON.stringify(mergeMap),
         JSON.stringify(noClassMap),
-        fileName
+        fileName,
+        req.body.url
       ], (error, results) => {
         if (error) {
           console.error('保存课程表失败:', error);
@@ -148,7 +151,8 @@ router.get('/detail', async (req, res) => {
           mergeMap: JSON.parse(schedule.merge_map),
           noClassMap: JSON.parse(schedule.no_class_map),
           fileName: schedule.file_name,
-          importTime: schedule.import_time
+          importTime: schedule.import_time,
+          url: schedule.url
         }
       });
     });
@@ -161,7 +165,7 @@ router.get('/detail', async (req, res) => {
   }
 });
 
-// 解析金山在线云文档表格数据
+// 解析金山在线云文档表格数据，老的两部接口解析流程，新的接口解析流程在kdocsExport.js中
 router.post('/parse-wps', async (req, res) => {
   try {
     const { url } = req.body;

@@ -1,3 +1,13 @@
+// 必须在根目录执行才能读取到.env文件
+require('dotenv').config();
+
+console.log('数据库连接配置:');
+console.log('DB_HOST:', process.env.DB_HOST);
+console.log('DB_PORT:', process.env.DB_PORT);
+console.log('DB_USER:', process.env.DB_USER);
+console.log('DB_PASSWORD:', process.env.DB_PASSWORD);
+console.log('DB_NAME:', process.env.DB_NAME);
+
 const fs = require('fs').promises;
 const path = require('path');
 const db = require('../db');
@@ -5,7 +15,7 @@ const db = require('../db');
 async function runMigration(sqlFileName) {
   try {
     // 读取 SQL 迁移脚本
-    const migrationSqlPath = path.join(__dirname, '../migrations/', sqlFileName);
+    const migrationSqlPath = path.join(__dirname, '../sql/', sqlFileName);
     const migrationSql = await fs.readFile(migrationSqlPath, 'utf8');
 
     // 分割 SQL 语句

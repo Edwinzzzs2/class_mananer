@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Upload, Button, Table, Card, Tag, ConfigProvider, Modal, Select, Form, message, Tooltip, Collapse } from 'antd';
-import { UploadOutlined, UserOutlined, CalendarOutlined, QuestionCircleOutlined, SaveOutlined } from '@ant-design/icons';
+import { Upload, Button, Table, Card, Tag, ConfigProvider, Modal, Select, Form, message, Tooltip, Collapse, Input } from 'antd';
+import { UploadOutlined, UserOutlined, CalendarOutlined, QuestionCircleOutlined, SaveOutlined, SyncOutlined, EditOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
 import zhCN from 'antd/lib/locale/zh_CN';
 import './App.css';
@@ -36,6 +36,11 @@ function App() {
   const [scheduleId, setScheduleId] = useState(null); // 数据库id
   const [teacherDetailVisible, setTeacherDetailVisible] = useState(false);
   const [teacherDetailData, setTeacherDetailData] = useState(null);
+  const [updateLoading, setUpdateLoading] = useState(false); // 新增：更新按钮loading状态
+  const [title, setTitle] = useState(localStorage.getItem('title') || '雨花课程表分析系统');
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [url, setUrl] = useState(localStorage.getItem('url') || 'https://www.kdocs.cn/l/ckDFlQtwrj6B');
+  const [editingUrl, setEditingUrl] = useState(false);
 
   // 1. 获取所有时间段，并按周一~周日排序
   const weekOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -234,13 +239,22 @@ function App() {
         const res = await fetch('http://192.168.31.80:3609/schedule/detail');
         const result = await res.json();
         if (result.code === 0 && result.data) {
-          const { excelData, teacherStats, mergeMap, noClassMap, id } = result.data;
+          const { excelData, teacherStats, mergeMap, noClassMap, id, url: remoteUrl, title: remoteTitle } = result.data;
           setExcelData(excelData);
           setClassData(excelData);
           setTeacherStats(teacherStats);
           setMergeMap(mergeMap || {});
           setNoClassMap(noClassMap || {});
           setScheduleId(id);
+          // 新增：下发url和title
+          if (remoteUrl) {
+            setUrl(remoteUrl);
+            localStorage.setItem('url', remoteUrl);
+          }
+          if (remoteTitle) {
+            setTitle(remoteTitle);
+            localStorage.setItem('title', remoteTitle);
+          }
           // 同步localStorage
           localStorage.setItem('excelData', JSON.stringify(excelData));
           localStorage.setItem('classData', JSON.stringify(excelData));
@@ -256,12 +270,16 @@ function App() {
           const savedExcelData = localStorage.getItem('excelData');
           const savedNoClassMap = localStorage.getItem('noClassMap');
           const savedId = localStorage.getItem('scheduleId');
+          const savedUrl = localStorage.getItem('url');
+          const savedTitle = localStorage.getItem('title');
           if (savedTeacherStats) setTeacherStats(JSON.parse(savedTeacherStats));
           if (savedClassData) setClassData(JSON.parse(savedClassData));
           if (savedMergeMap) setMergeMap(JSON.parse(savedMergeMap));
           if (savedExcelData) setExcelData(JSON.parse(savedExcelData));
           if (savedNoClassMap) setNoClassMap(JSON.parse(savedNoClassMap));
           if (savedId) setScheduleId(savedId);
+          if (savedUrl) setUrl(savedUrl);
+          if (savedTitle) setTitle(savedTitle);
         }
       } catch (error) {
         // fallback to localStorage
@@ -271,12 +289,16 @@ function App() {
         const savedExcelData = localStorage.getItem('excelData');
         const savedNoClassMap = localStorage.getItem('noClassMap');
         const savedId = localStorage.getItem('scheduleId');
+        const savedUrl = localStorage.getItem('url');
+        const savedTitle = localStorage.getItem('title');
         if (savedTeacherStats) setTeacherStats(JSON.parse(savedTeacherStats));
         if (savedClassData) setClassData(JSON.parse(savedClassData));
         if (savedMergeMap) setMergeMap(JSON.parse(savedMergeMap));
         if (savedExcelData) setExcelData(JSON.parse(savedExcelData));
         if (savedNoClassMap) setNoClassMap(JSON.parse(savedNoClassMap));
         if (savedId) setScheduleId(savedId);
+        if (savedUrl) setUrl(savedUrl);
+        if (savedTitle) setTitle(savedTitle);
       }
     })();
   }, []);
@@ -552,19 +574,6 @@ function App() {
 
   // 保存到接口和localStorage
   const handleSave = async () => {
-    // 校验
-    // if (!excelData || excelData.length === 0) {
-    //   message.error('原始Excel数据为空，不能保存！');
-    //   return;
-    // }
-    // if (!mergeMap || Object.keys(mergeMap).length === 0) {
-    //   message.error('合并关系数据为空，不能保存！');
-    //   return;
-    // }
-    // if (!noClassMap || Object.keys(noClassMap).length === 0) {
-    //   message.error('无课时设置数据为空，不能保存！');
-    //   return;
-    // }
     setSaveLoading(true);
     try {
       const body = {
@@ -573,9 +582,10 @@ function App() {
         mergeMap,
         noClassMap,
         fileName: '', // 可根据实际情况传
-        id: scheduleId
+        id: scheduleId,
+        url, // 新增
+        title, // 新增
       };
-      // const res = await fetch('/schedule/save', {
       const res = await fetch('http://192.168.31.80:3609/schedule/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -595,6 +605,8 @@ function App() {
         localStorage.setItem('teacherStats', JSON.stringify(teacherStats));
         localStorage.setItem('mergeMap', JSON.stringify(mergeMap || {}));
         localStorage.setItem('noClassMap', JSON.stringify(noClassMap || {}));
+        localStorage.setItem('url', url);
+        localStorage.setItem('title', title);
       } else {
         message.error(result.message || '保存失败');
       }
@@ -605,14 +617,125 @@ function App() {
     }
   };
 
+  // 新增：从金山文档获取数据
+  const handleUpdateFromKdocs = async () => {
+    setUpdateLoading(true);
+    try {
+      const res = await fetch('http://192.168.31.26:3006/schedule/kdocs-direct-download-and-parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: url // 取自当前界面上的url状态
+        })
+      });
+      const result = await res.json();
+      if (result.code === 0 && result.data) {
+        setExcelData(result.data);
+        localStorage.setItem('excelData', JSON.stringify(result.data));
+        setClassData(result.data);
+        localStorage.setItem('classData', JSON.stringify(result.data));
+        processClassData(result.data);
+        message.success(result.message);
+      } else {
+        message.error(result.message || '获取数据失败');
+      }
+    } catch (error) {
+      console.error('从金山文档获取数据失败:', error);
+      message.error('获取数据失败，请检查网络连接');
+    } finally {
+      setUpdateLoading(false);
+    }
+  };
+
   return (
     <ConfigProvider locale={zhCN}>
       <div className="App" style={{ margin: '0 auto', padding: 24 }}>
         <div className="main-content-mobile">
           <div style={{ width: '100%', margin: '8px 2px 8px 0' }}>
             <div className="button-group-mobile" style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
-              <div className="side-title">雨花课程表分析系统</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {editingTitle ? (
+                  <Input
+                    value={title}
+                    onChange={e => setTitle(e.target.value)}
+                    onBlur={() => {
+                      setEditingTitle(false);
+                      localStorage.setItem('title', title);
+                    }}
+                    onPressEnter={() => {
+                      setEditingTitle(false);
+                      localStorage.setItem('title', title);
+                    }}
+                    style={{ fontWeight: 'bold', fontSize: '2.2rem', width: 220 }}
+                    autoFocus
+                  />
+                ) : (
+                  <span
+                    className="side-title"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setEditingTitle(true)}
+                    title="点击编辑标题"
+                  >
+                    {title}
+                  </span>
+                )}
+                {editingUrl ? (
+                  <Input
+                    value={url}
+                    onChange={e => setUrl(e.target.value)}
+                    onBlur={() => {
+                      setEditingUrl(false);
+                      localStorage.setItem('url', url);
+                    }}
+                    onPressEnter={() => {
+                      setEditingUrl(false);
+                      localStorage.setItem('url', url);
+                    }}
+                    style={{ width: 320 }}
+                    autoFocus
+                  />
+                ) : (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        color: '#1677ff',
+                        fontSize: 16,
+                        marginLeft: 8,
+                        textDecoration: 'underline',
+                        cursor: 'pointer',
+                        maxWidth: 320,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title={url}
+                    >
+                      {url}
+                    </a>
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={() => setEditingUrl(true)}
+                      style={{ padding: 0, marginLeft: 2 }}
+                      title="编辑链接"
+                    />
+                  </span>
+                )}
+              </div>
               <div style={{ display: 'flex', gap: 12 }}>
+                <Button 
+                  icon={<SyncOutlined />} 
+                  type="primary" 
+                  size="large"
+                  loading={updateLoading}
+                  onClick={handleUpdateFromKdocs}
+                >
+                  更新数据
+                </Button>
                 <Upload
                   accept=".xlsx,.xls"
                   beforeUpload={handleFileUpload}
@@ -742,6 +865,45 @@ function App() {
                   backgroundColor: index % 2 === 0 ? '#fafafa' : '#ffffff',
                 },
               })}
+              summary={(pageData) => {
+                const totalRow = { name: '合计' };
+                allTimeSlots.forEach(time => {
+                  let totalFilled = 0;
+                  let totalEmpty = 0;
+                  pageData.forEach(row => {
+                    const cell = row[time];
+                    if (cell) {
+                      totalFilled += cell.filled;
+                      totalEmpty += cell.empty;
+                    }
+                  });
+                  totalRow[time] = {
+                    filled: totalFilled,
+                    empty: totalEmpty,
+                    total: totalFilled + totalEmpty
+                  };
+                });
+                return (
+                  <Table.Summary fixed>
+                    <Table.Summary.Row>
+                      <Table.Summary.Cell index={0} colSpan={1}>
+                        <span style={{ fontWeight: 600, fontSize: 15 }}>合计</span>
+                      </Table.Summary.Cell>
+                      {allTimeSlots.map((time, index) => {
+                        const cell = totalRow[time];
+                        if (!cell) return <Table.Summary.Cell key={time} index={index + 1} />;
+                        return (
+                          <Table.Summary.Cell key={time} index={index + 1}>
+                            <span style={{ fontSize: 15, fontWeight: 500 }}>
+                              报{cell.filled} 空{cell.empty}
+                            </span>
+                          </Table.Summary.Cell>
+                        );
+                      })}
+                    </Table.Summary.Row>
+                  </Table.Summary>
+                );
+              }}
             />
           </Card>
         </div>
