@@ -570,3 +570,18 @@
 .ant-collapse > .ant-collapse-item > .ant-collapse-header .ant-collapse-header-text {
   flex: none
 }
+
+/* 标题和链接分组样式 */
+.title-link-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+  .title-link-group {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+}

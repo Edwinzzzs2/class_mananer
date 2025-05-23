@@ -236,7 +236,7 @@ function App() {
     (async () => {
       try {
         // const res = await fetch('/schedule/detail');
-        const res = await fetch('http://192.168.31.80:3609/schedule/detail');
+        const res = await fetch('/schedule/detail');
         const result = await res.json();
         if (result.code === 0 && result.data) {
           const { excelData, teacherStats, mergeMap, noClassMap, id, url: remoteUrl, title: remoteTitle } = result.data;
@@ -586,7 +586,7 @@ function App() {
         url, // 新增
         title, // 新增
       };
-      const res = await fetch('http://192.168.31.80:3609/schedule/save', {
+      const res = await fetch('/schedule/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -621,7 +621,7 @@ function App() {
   const handleUpdateFromKdocs = async () => {
     setUpdateLoading(true);
     try {
-      const res = await fetch('http://192.168.31.26:3006/schedule/kdocs-direct-download-and-parse', {
+      const res = await fetch('/schedule/kdocs-direct-download-and-parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -654,77 +654,79 @@ function App() {
           <div style={{ width: '100%', margin: '8px 2px 8px 0' }}>
             <div className="button-group-mobile" style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {editingTitle ? (
-                  <Input
-                    value={title}
-                    onChange={e => setTitle(e.target.value)}
-                    onBlur={() => {
-                      setEditingTitle(false);
-                      localStorage.setItem('title', title);
-                    }}
-                    onPressEnter={() => {
-                      setEditingTitle(false);
-                      localStorage.setItem('title', title);
-                    }}
-                    style={{ fontWeight: 'bold', fontSize: '2.2rem', width: 220 }}
-                    autoFocus
-                  />
-                ) : (
-                  <span
-                    className="side-title"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setEditingTitle(true)}
-                    title="点击编辑标题"
-                  >
-                    {title}
-                  </span>
-                )}
-                {editingUrl ? (
-                  <Input
-                    value={url}
-                    onChange={e => setUrl(e.target.value)}
-                    onBlur={() => {
-                      setEditingUrl(false);
-                      localStorage.setItem('url', url);
-                    }}
-                    onPressEnter={() => {
-                      setEditingUrl(false);
-                      localStorage.setItem('url', url);
-                    }}
-                    style={{ width: 320 }}
-                    autoFocus
-                  />
-                ) : (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        color: '#1677ff',
-                        fontSize: 16,
-                        marginLeft: 8,
-                        textDecoration: 'underline',
-                        cursor: 'pointer',
-                        maxWidth: 320,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
+                <div className="title-link-group">
+                  {editingTitle ? (
+                    <Input
+                      value={title}
+                      onChange={e => setTitle(e.target.value)}
+                      onBlur={() => {
+                        setEditingTitle(false);
+                        localStorage.setItem('title', title);
                       }}
-                      title={url}
-                    >
-                      {url}
-                    </a>
-                    <Button
-                      type="link"
-                      size="small"
-                      icon={<EditOutlined />}
-                      onClick={() => setEditingUrl(true)}
-                      style={{ padding: 0, marginLeft: 2 }}
-                      title="编辑链接"
+                      onPressEnter={() => {
+                        setEditingTitle(false);
+                        localStorage.setItem('title', title);
+                      }}
+                      style={{ fontWeight: 'bold', fontSize: '2.2rem', width: 220 }}
+                      autoFocus
                     />
-                  </span>
-                )}
+                  ) : (
+                    <span
+                      className="side-title"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setEditingTitle(true)}
+                      title="点击编辑标题"
+                    >
+                      {title}
+                    </span>
+                  )}
+                  {editingUrl ? (
+                    <Input
+                      value={url}
+                      onChange={e => setUrl(e.target.value)}
+                      onBlur={() => {
+                        setEditingUrl(false);
+                        localStorage.setItem('url', url);
+                      }}
+                      onPressEnter={() => {
+                        setEditingUrl(false);
+                        localStorage.setItem('url', url);
+                      }}
+                      style={{ width: 320 }}
+                      autoFocus
+                    />
+                  ) : (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: '#1677ff',
+                          fontSize: 16,
+                          marginLeft: 8,
+                          textDecoration: 'underline',
+                          cursor: 'pointer',
+                          maxWidth: 320,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}
+                        title={url}
+                      >
+                        {url}
+                      </a>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => setEditingUrl(true)}
+                        style={{ padding: 0, marginLeft: 2 }}
+                        title="编辑链接"
+                      />
+                    </span>
+                  )}
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 12 }}>
                 <Button 
