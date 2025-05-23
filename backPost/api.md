@@ -32,9 +32,25 @@
   "teacherStats": [],        // 老师统计信息
   "mergeMap": {},            // 合并单元格配置
   "noClassMap": {},          // 无课时间配置
+  "advisorStudentMap": {},   // 顾问-学生对应关系（新增，示例见下）
   "fileName": "2024春季班课程表.xlsx",  // 可选，文件名
   "id": "xxx",              // 可选，存在时为更新操作
-  "url": "https://www.kdocs.cn/l/xxxx" // 可选，课程表关联的外部文档url
+  "url": "https://www.kdocs.cn/l/xxxx", // 可选，课程表关联的外部文档url
+  "title": "雨花课程表分析系统"         // 可选，课程表标题（新增）
+}
+```
+
+- `advisorStudentMap` 示例：
+```json
+{
+  "test1": {
+    "students": ["张三", "李四"],
+    "color": "#1677ff"
+  },
+  "test2": {
+    "students": ["王五", "赵六"],
+    "color": "#52c41a"
+  }
 }
 ```
 
@@ -73,14 +89,16 @@
 {
   "code": 0,
   "data": {
-    "id": 1,                  // 课程表ID，用于更新操作
-    "excelData": [],           // 二维数组，原始表格内容
-    "teacherStats": [],        // 老师统计信息
-    "mergeMap": {},            // 合并单元格配置
-    "noClassMap": {},          // 无课时间配置
+    "id": 1,
+    "excelData": [],
+    "teacherStats": [],
+    "mergeMap": {},
+    "noClassMap": {},
+    "advisorStudentMap": {}, // 顾问-学生对应关系（新增）
     "fileName": "2024春季班课程表.xlsx",
-    "importTime": "2024-05-01T12:00:00Z",
-    "url": "https://www.kdocs.cn/l/xxxx" // 课程表关联的外部文档url
+    "importTime": "2024-05-01 12:00:00",
+    "url": "https://www.kdocs.cn/l/xxxx",
+    "title": "雨花课程表分析系统" // 课程表标题（新增）
   }
 }
 ```

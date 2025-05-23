@@ -30,7 +30,10 @@ function createTables() {
         teacher_stats JSON NOT NULL,
         merge_map JSON NOT NULL,
         no_class_map JSON NOT NULL,
+        advisor_student_map JSON NULL,
         file_name VARCHAR(255),
+        url VARCHAR(500),
+        title VARCHAR(255),
         import_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`;
 

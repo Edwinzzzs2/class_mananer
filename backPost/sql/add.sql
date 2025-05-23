@@ -8,5 +8,13 @@
 --     internal_url = NULL 
 -- WHERE backup_url IS NULL AND internal_url IS NULL;
 
-ALTER TABLE schedules ADD COLUMN url VARCHAR(500) NULL AFTER file_name;
-UPDATE schedules SET url = NULL WHERE url IS NULL;
+-- ALTER TABLE schedules ADD COLUMN url VARCHAR(500) NULL AFTER file_name;
+-- UPDATE schedules SET url = NULL WHERE url IS NULL;
+
+-- ALTER TABLE schedules ADD COLUMN advisor_student_map JSON NULL AFTER no_class_map;
+-- ALTER TABLE schedules ADD COLUMN title VARCHAR(255) NULL AFTER url;
+
+-- ALTER TABLE schedules ADD COLUMN advisor_student_map JSON NULL AFTER no_class_map;
+-- ALTER TABLE schedules ADD COLUMN title VARCHAR(255) NULL AFTER url;
+
+DESC schedules;

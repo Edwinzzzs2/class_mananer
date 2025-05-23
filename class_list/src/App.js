@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Upload, Button, Table, Card, Tag, ConfigProvider, Modal, Select, Form, message, Tooltip, Collapse, Input } from 'antd';
-import { UploadOutlined, UserOutlined, CalendarOutlined, QuestionCircleOutlined, SaveOutlined, SyncOutlined, EditOutlined } from '@ant-design/icons';
+import { UploadOutlined, UserOutlined, CalendarOutlined, QuestionCircleOutlined, SaveOutlined, SyncOutlined, EditOutlined, CloseOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
 import zhCN from 'antd/lib/locale/zh_CN';
 import './App.css';
@@ -41,6 +41,13 @@ function App() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [url, setUrl] = useState(localStorage.getItem('url') || 'https://www.kdocs.cn/l/ckDFlQtwrj6B');
   const [editingUrl, setEditingUrl] = useState(false);
+  // 新增：顾问-学生关系相关状态
+  const [advisorStudentMap, setAdvisorStudentMap] = useState(JSON.parse(localStorage.getItem('advisorStudentMap') || '{}'));
+  const [advisorModalVisible, setAdvisorModalVisible] = useState(false);
+  const [selectedStudents, setSelectedStudents] = useState([]);
+  const [selectedAdvisor, setSelectedAdvisor] = useState('');
+  const [selectedColor, setSelectedColor] = useState('#1677ff');
+  const [editAdvisorGroup, setEditAdvisorGroup] = useState(null);
 
   // 1. 获取所有时间段，并按周一~周日排序
   const weekOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -235,8 +242,8 @@ function App() {
   useEffect(() => {
     (async () => {
       try {
+        const res = await fetch('http://localhost:3006/schedule/detail');
         // const res = await fetch('/schedule/detail');
-        const res = await fetch('/schedule/detail');
         const result = await res.json();
         if (result.code === 0 && result.data) {
           const { excelData, teacherStats, mergeMap, noClassMap, id, url: remoteUrl, title: remoteTitle } = result.data;
@@ -572,6 +579,70 @@ function App() {
     setEditNoClassTeacher(null);
   };
 
+  // 新增：顾问-学生关系相关函数
+  const showAdvisorModal = (e) => {
+    e.stopPropagation();
+    setAdvisorModalVisible(true);
+    setSelectedStudents([]);
+    setSelectedAdvisor('');
+    setSelectedColor('#1677ff');
+    setEditAdvisorGroup(null);
+  };
+
+  const handleEditAdvisor = (advisor) => {
+    setAdvisorModalVisible(true);
+    setSelectedStudents(advisorStudentMap[advisor].students);
+    setSelectedAdvisor(advisor);
+    setSelectedColor(advisorStudentMap[advisor].color || '#1677ff');
+    setEditAdvisorGroup(advisor);
+  };
+
+  const handleAdvisorCancel = () => {
+    setAdvisorModalVisible(false);
+    setEditAdvisorGroup(null);
+  };
+
+  const handleSetAdvisor = () => {
+    if (!selectedAdvisor || selectedStudents.length === 0) {
+      message.warning('请选择顾问老师和学生');
+      return;
+    }
+
+    // 检查顾问名称是否重复
+    if (editAdvisorGroup !== selectedAdvisor && advisorStudentMap[selectedAdvisor]) {
+      message.error('该顾问名称已存在');
+      return;
+    }
+
+    const newMap = { ...advisorStudentMap };
+    if (editAdvisorGroup) {
+      delete newMap[editAdvisorGroup];
+    }
+    newMap[selectedAdvisor] = {
+      students: selectedStudents,
+      color: selectedColor
+    };
+    setAdvisorStudentMap(newMap);
+    localStorage.setItem('advisorStudentMap', JSON.stringify(newMap));
+    message.success('设置成功');
+    setAdvisorModalVisible(false);
+    setEditAdvisorGroup(null);
+  };
+
+  // 获取所有未被分配的学生
+  const getAvailableStudents = useMemo(() => {
+    const assignedStudents = new Set(
+      Object.values(advisorStudentMap)
+        .flatMap(data => data.students)
+    );
+    return teacherStats
+      .flatMap(teacher => teacher.slots)
+      .flatMap(slot => slot.students)
+      .filter(student => !assignedStudents.has(student) || 
+        (editAdvisorGroup && advisorStudentMap[editAdvisorGroup]?.students.includes(student)))
+      .filter((student, index, self) => self.indexOf(student) === index);
+  }, [teacherStats, advisorStudentMap, editAdvisorGroup]);
+
   // 保存到接口和localStorage
   const handleSave = async () => {
     setSaveLoading(true);
@@ -581,12 +652,13 @@ function App() {
         teacherStats,
         mergeMap,
         noClassMap,
+        advisorStudentMap,
         fileName: '', // 可根据实际情况传
         id: scheduleId,
-        url, // 新增
-        title, // 新增
+        url,
+        title,
       };
-      const res = await fetch('/schedule/save', {
+      const res = await fetch('http://localhost:3006/schedule/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -605,6 +677,7 @@ function App() {
         localStorage.setItem('teacherStats', JSON.stringify(teacherStats));
         localStorage.setItem('mergeMap', JSON.stringify(mergeMap || {}));
         localStorage.setItem('noClassMap', JSON.stringify(noClassMap || {}));
+        localStorage.setItem('advisorStudentMap', JSON.stringify(advisorStudentMap || {}));
         localStorage.setItem('url', url);
         localStorage.setItem('title', title);
       } else {
@@ -645,6 +718,35 @@ function App() {
     } finally {
       setUpdateLoading(false);
     }
+  };
+
+  // 在组件内添加删除函数
+  const handleDeleteAdvisor = (advisor) => {
+    Modal.confirm({
+      title: `确定要删除顾问"${advisor}"及其所有学生绑定关系吗？`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => {
+        const newMap = { ...advisorStudentMap };
+        delete newMap[advisor];
+        setAdvisorStudentMap(newMap);
+        localStorage.setItem('advisorStudentMap', JSON.stringify(newMap));
+        message.success('已删除');
+      }
+    });
+  };
+
+  // 在组件内添加移除学生函数
+  const handleRemoveStudentFromAdvisor = (advisor, student) => {
+    const newMap = { ...advisorStudentMap };
+    newMap[advisor] = {
+      ...newMap[advisor],
+      students: newMap[advisor].students.filter(s => s !== student)
+    };
+    setAdvisorStudentMap(newMap);
+    localStorage.setItem('advisorStudentMap', JSON.stringify(newMap));
+    message.success('已移除');
   };
 
   return (
@@ -845,6 +947,94 @@ function App() {
                 )}
               </div>
             </Collapse.Panel>
+            <Collapse.Panel key="advisor" header={
+              <span>
+                顾问-学生关系
+                <span style={{ marginLeft: 16 }}>
+                  <a style={{ color: '#1677ff', fontWeight: 500, fontSize: 14, cursor: 'pointer' }} onClick={(e) => showAdvisorModal(e)}>添加关系</a>
+                </span>
+              </span>
+            }>
+              {/* 构建学生-顾问颜色映射，供下方使用 */}
+              {(() => {
+                const studentAdvisorColorMap = {};
+                Object.entries(advisorStudentMap).forEach(([advisor, data]) => {
+                  (data.students || []).forEach(stu => {
+                    studentAdvisorColorMap[stu] = data.color || '#1677ff';
+                  });
+                });
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 }}>
+                    {Object.entries(advisorStudentMap).map(([advisor, data]) => (
+                      <div className="advisor-row" key={advisor} style={{ width: '100%', marginBottom: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                          <span style={{ 
+                            fontWeight: 600, 
+                            fontSize: 15,
+                            color: data.color || '#1677ff',
+                            marginRight: 8
+                          }}>
+                            {advisor}：
+                          </span>
+                          <Button
+                            type="link"
+                            size="small"
+                            onClick={() => handleEditAdvisor(advisor)}
+                          >
+                            编辑
+                          </Button>
+                          <Button
+                            type="link"
+                            size="small"
+                            danger
+                            onClick={() => handleDeleteAdvisor(advisor)}
+                            style={{ marginLeft: 4 }}
+                          >
+                            删除
+                          </Button>
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {data.students.map(student => {
+                            const advisorColor = studentAdvisorColorMap[student];
+                            const hasAdvisor = !!advisorColor;
+                            return (
+                              <span key={student} style={{ display: 'inline-block', marginRight: 2, position: 'relative' }}>
+                                <span style={{
+                                  display: 'inline-block',
+                                  color: hasAdvisor ? advisorColor : '#999',
+                                  border: hasAdvisor ? `1.5px solid ${advisorColor}` : '1.5px solid #eee',
+                                  background: hasAdvisor ? '#f6faff' : '#f8f8f8',
+                                  borderRadius: 8,
+                                  fontWeight: 600,
+                                  fontSize: 13,
+                                  padding: '2px 12px 2px 12px',
+                                  marginRight: 2,
+                                  boxShadow: hasAdvisor ? '0 1px 4px rgba(0,0,0,0.07)' : 'none',
+                                  transition: 'all 0.2s',
+                                  position: 'relative',
+                                }} title={Object.entries(advisorStudentMap).find(([_, data]) => (data.students || []).includes(student))?.[0] || ''}>
+                                  {student}
+                                  <CloseOutlined
+                                    style={{
+                                      fontSize: 12,
+                                      color: hasAdvisor ? advisorColor : '#999',
+                                      marginLeft: 4,
+                                      cursor: 'pointer',
+                                      verticalAlign: 'middle',
+                                    }}
+                                    onClick={() => handleRemoveStudentFromAdvisor(advisor, student)}
+                                  />
+                                </span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </Collapse.Panel>
           </Collapse>
           {/* 只保留时间段汇总表 */}
           <Card
@@ -1003,6 +1193,54 @@ function App() {
           </Form>
         </Modal>
 
+        {/* 新增：顾问-学生关系弹窗 */}
+        <Modal
+          title={editAdvisorGroup ? "编辑顾问-学生关系" : "添加顾问-学生关系"}
+          maskClosable={false}
+          open={advisorModalVisible}
+          onCancel={handleAdvisorCancel}
+          onOk={handleSetAdvisor}
+          okText="确定"
+          cancelText="取消"
+        >
+          <Form layout="vertical">
+            <Form.Item label="顾问老师">
+              <Input
+                placeholder="请输入顾问老师姓名"
+                value={selectedAdvisor}
+                onChange={e => setSelectedAdvisor(e.target.value)}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+            <Form.Item label="选择学生">
+              <Select
+                mode="multiple"
+                allowClear
+                placeholder="请选择学生"
+                options={getAvailableStudents.map(s => ({ label: s, value: s }))}
+                value={selectedStudents}
+                onChange={setSelectedStudents}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+            <Form.Item label="选择颜色">
+              <Select
+                value={selectedColor}
+                onChange={setSelectedColor}
+                style={{ width: '100%' }}
+                options={[
+                  { label: '蓝色', value: '#1677ff' },
+                  { label: '绿色', value: '#52c41a' },
+                  { label: '橙色', value: '#fa8c16' },
+                  { label: '红色', value: '#f5222d' },
+                  { label: '紫色', value: '#722ed1' },
+                  { label: '青色', value: '#13c2c2' },
+                ]}
+              />
+            </Form.Item>
+          </Form>
+        </Modal>
+
         {/* 老师详情弹窗 */}
         <Modal
           title={teacherDetailData ? `${teacherDetailData.name} 课程详情` : ''}
@@ -1024,90 +1262,125 @@ function App() {
           }}
         >
           {teacherDetailData && (
-            <div style={{ 
-              flex: 1,
-              overflowY: 'auto',
-              WebkitOverflowScrolling: 'touch'
-            }}>
-              {teacherDetailData.slots
-                .slice()
-                .filter(slot => {
-                  // 只显示有课程的时间段
-                  const hasClass = slot.filledCells > 0 || slot.emptyCells > 0;
-                  // 检查是否在无课时设置中
-                  const isNoClass = teacherDetailData.mergedFrom?.some(name => 
-                    noClassMap[name]?.includes(slot.timeSlot)
-                  );
-                  return hasClass && !isNoClass;
-                })
-                .sort((a, b) => {
-                  // 星期排序
-                  const weekOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-                  const getWeekIdx = s => weekOrder.findIndex(w => s.includes(w));
-                  const getTimeNum = s => {
-                    const match = s.match(/(\d+):(\d+)/);
-                    if (match) return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-                    return 0;
-                  };
-                  const aWeek = getWeekIdx(a.timeSlot);
-                  const bWeek = getWeekIdx(b.timeSlot);
-                  if (aWeek !== bWeek) return aWeek - bWeek;
-                  return getTimeNum(a.timeSlot) - getTimeNum(b.timeSlot);
-                })
-                .map(slot => {
-                  const weekOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-                  const week = weekOrder.find(w => slot.timeSlot.includes(w)) || '';
-                  const weekColor = weekColorMap[week] || '#1677ff';
-                  return (
-                    <div key={slot.timeSlot} style={{ marginBottom: 16, borderBottom: '1px solid #f0f0f0', paddingBottom: 10 }}>
-                      <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                        <span style={{ color: weekColor }}>{week}</span>
-                        <span style={{ color: '#1677ff', marginLeft: 4 }}>{slot.timeSlot.replace(week, '')}</span>
-                      </div>
-                      <div style={{ fontSize: 14, marginBottom: 8 }}>
-                        <span style={{ color: '#1890ff', fontWeight: 500 }}>学生：</span>
-                        {slot.students.length > 0 ? (
-                          <span style={{ color: '#333', fontWeight: 500 }}>{slot.students.join('、')}</span>
-                        ) : (
-                          <span style={{ color: '#aaa' }}>无</span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 14, marginBottom: 2 }}>
-                        <span style={{ color: '#1677ff', fontWeight: 700, background: '#e6f4ff', borderRadius: 4, padding: '2px 10px', marginRight: 6 }}>
-                          报{slot.filledCells}
-                        </span>
-                        {slot.emptyCells === 0 ? (
-                          <span style={{ color: '#fa8c16', fontWeight: 700, background: '#fff7e6', borderRadius: 4, padding: '2px 10px', marginRight: 6 }}>满</span>
-                        ) : (
-                          <span style={{ color: '#52c41a', fontWeight: 700, background: '#f6ffed', borderRadius: 4, padding: '2px 10px', marginRight: 6 }}>
-                            空{slot.emptyCells}
-                          </span>
-                        )}
-                        <span style={{ color: '#999', margin: '0 4px' }}>/</span>
-                        <span style={{ color: '#1890ff', fontWeight: 600 }}>总数：</span>
-                        <span style={{ color: '#1890ff', fontWeight: 700 }}>{slot.totalCells}</span>
-                      </div>
-                      <div style={{
-                        width: '100%',
-                        height: 3,
-                        background: '#f0f0f0',
-                        borderRadius: 6,
-                        margin: '8px 0 0 0',
-                        position: 'relative',
-                        overflow: 'hidden'
-                      }}>
-                        <div style={{
-                          width: `${(slot.filledCells / slot.totalCells) * 100}%`,
-                          height: '100%',
-                          background: slot.emptyCells === 0 ? '#fa8c16' : '#1677ff',
-                          borderRadius: 6,
-                          transition: 'width 0.3s'
-                        }} />
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
+            (() => {
+              // 构建学生-顾问颜色映射
+              const studentAdvisorColorMap = {};
+              Object.entries(advisorStudentMap).forEach(([advisor, data]) => {
+                (data.students || []).forEach(stu => {
+                  studentAdvisorColorMap[stu] = data.color || '#1677ff';
+                });
+              });
+              return (
+                <div style={{ 
+                  flex: 1,
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch'
+                }}>
+                  {teacherDetailData.slots
+                    .slice()
+                    .filter(slot => {
+                      // 只显示有课程的时间段
+                      const hasClass = slot.filledCells > 0 || slot.emptyCells > 0;
+                      // 检查是否在无课时设置中
+                      const isNoClass = teacherDetailData.mergedFrom?.some(name => 
+                        noClassMap[name]?.includes(slot.timeSlot)
+                      );
+                      return hasClass && !isNoClass;
+                    })
+                    .sort((a, b) => {
+                      // 星期排序
+                      const weekOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+                      const getWeekIdx = s => weekOrder.findIndex(w => s.includes(w));
+                      const getTimeNum = s => {
+                        const match = s.match(/(\d+):(\d+)/);
+                        if (match) return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+                        return 0;
+                      };
+                      const aWeek = getWeekIdx(a.timeSlot);
+                      const bWeek = getWeekIdx(b.timeSlot);
+                      if (aWeek !== bWeek) return aWeek - bWeek;
+                      return getTimeNum(a.timeSlot) - getTimeNum(b.timeSlot);
+                    })
+                    .map(slot => {
+                      const weekOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+                      const week = weekOrder.find(w => slot.timeSlot.includes(w)) || '';
+                      const weekColor = weekColorMap[week] || '#1677ff';
+                      return (
+                        <div key={slot.timeSlot} style={{ marginBottom: 16, borderBottom: '1px solid #f0f0f0', paddingBottom: 10 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                            <span style={{ color: weekColor }}>{week}</span>
+                            <span style={{ color: '#1677ff', marginLeft: 4 }}>{slot.timeSlot.replace(week, '')}</span>
+                          </div>
+                          <div style={{ fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span style={{ color: '#1890ff', fontWeight: 500, marginRight: 6 }}>学生：</span>
+                            {slot.students.length > 0 ? (
+                              <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {slot.students.map(stu => {
+                                  const advisorColor = studentAdvisorColorMap[stu];
+                                  const hasAdvisor = !!advisorColor;
+                                  return (
+                                    <span key={stu} style={{ display: 'inline-block', marginRight: 2 }}>
+                                      <span style={{
+                                        display: 'inline-block',
+                                        color: hasAdvisor ? advisorColor : '#999',
+                                        border: hasAdvisor ? `1.5px solid ${advisorColor}` : '1.5px solid #eee',
+                                        background: hasAdvisor ? '#f6faff' : '#f8f8f8',
+                                        borderRadius: 8,
+                                        fontWeight: 600,
+                                        fontSize: 13,
+                                        padding: '2px 12px',
+                                        marginRight: 2,
+                                        boxShadow: hasAdvisor ? '0 1px 4px rgba(0,0,0,0.07)' : 'none',
+                                        transition: 'all 0.2s',
+                                      }} title={Object.entries(advisorStudentMap).find(([_, data]) => (data.students || []).includes(stu))?.[0] || ''}>
+                                        {stu}
+                                      </span>
+                                    </span>
+                                  );
+                                })}
+                              </span>
+                            ) : (
+                              <span style={{ color: '#aaa' }}>无</span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 14, marginBottom: 2 }}>
+                            <span style={{ color: '#1677ff', fontWeight: 700, background: '#e6f4ff', borderRadius: 4, padding: '2px 10px', marginRight: 6 }}>
+                              报{slot.filledCells}
+                            </span>
+                            {slot.emptyCells === 0 ? (
+                              <span style={{ color: '#fa8c16', fontWeight: 700, background: '#fff7e6', borderRadius: 4, padding: '2px 10px', marginRight: 6 }}>满</span>
+                            ) : (
+                              <span style={{ color: '#52c41a', fontWeight: 700, background: '#f6ffed', borderRadius: 4, padding: '2px 10px', marginRight: 6 }}>
+                                空{slot.emptyCells}
+                              </span>
+                            )}
+                            <span style={{ color: '#999', margin: '0 4px' }}>/</span>
+                            <span style={{ color: '#1890ff', fontWeight: 600 }}>总数：</span>
+                            <span style={{ color: '#1890ff', fontWeight: 700 }}>{slot.totalCells}</span>
+                          </div>
+                          <div style={{
+                            width: '100%',
+                            height: 3,
+                            background: '#f0f0f0',
+                            borderRadius: 6,
+                            margin: '8px 0 0 0',
+                            position: 'relative',
+                            overflow: 'hidden'
+                          }}>
+                            <div style={{
+                              width: `${(slot.filledCells / slot.totalCells) * 100}%`,
+                              height: '100%',
+                              background: slot.emptyCells === 0 ? '#fa8c16' : '#1677ff',
+                              borderRadius: 6,
+                              transition: 'width 0.3s'
+                            }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              );
+            })()
           )}
         </Modal>
 

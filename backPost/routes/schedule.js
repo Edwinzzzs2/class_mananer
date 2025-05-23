@@ -41,7 +41,7 @@ async function refreshAccessToken() {
 // 保存课程表数据
 router.post('/save', async (req, res) => {
   try {
-    const { excelData, teacherStats, mergeMap, noClassMap, fileName, id } = req.body;
+    const { excelData, teacherStats, mergeMap, noClassMap, fileName, id, advisorStudentMap, url, title } = req.body;
 
     if (id) {
       // 更新操作
@@ -51,8 +51,10 @@ router.post('/save', async (req, res) => {
             teacher_stats = ?, 
             merge_map = ?, 
             no_class_map = ?,
+            advisor_student_map = ?,
             file_name = ?,
-            url = ?
+            url = ?,
+            title = ?
         WHERE id = ?`;
 
       connection.query(updateQuery, [
@@ -60,8 +62,10 @@ router.post('/save', async (req, res) => {
         JSON.stringify(teacherStats),
         JSON.stringify(mergeMap),
         JSON.stringify(noClassMap),
+        JSON.stringify(advisorStudentMap || {}),
         fileName,
-        req.body.url,
+        url,
+        title,
         id
       ], (error, results) => {
         if (error) {
@@ -82,16 +86,18 @@ router.post('/save', async (req, res) => {
       // 新建操作
       const insertQuery = `
         INSERT INTO schedules 
-        (excel_data, teacher_stats, merge_map, no_class_map, file_name, url)
-        VALUES (?, ?, ?, ?, ?, ?)`;
+        (excel_data, teacher_stats, merge_map, no_class_map, advisor_student_map, file_name, url, title)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
       connection.query(insertQuery, [
         JSON.stringify(excelData),
         JSON.stringify(teacherStats),
         JSON.stringify(mergeMap),
         JSON.stringify(noClassMap),
+        JSON.stringify(advisorStudentMap || {}),
         fileName,
-        req.body.url
+        url,
+        title
       ], (error, results) => {
         if (error) {
           console.error('保存课程表失败:', error);
@@ -150,9 +156,11 @@ router.get('/detail', async (req, res) => {
           teacherStats: JSON.parse(schedule.teacher_stats),
           mergeMap: JSON.parse(schedule.merge_map),
           noClassMap: JSON.parse(schedule.no_class_map),
+          advisorStudentMap: schedule.advisor_student_map ? JSON.parse(schedule.advisor_student_map) : {},
           fileName: schedule.file_name,
           importTime: schedule.import_time,
-          url: schedule.url
+          url: schedule.url,
+          title: schedule.title || ''
         }
       });
     });
