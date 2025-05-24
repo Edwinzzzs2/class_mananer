@@ -25,7 +25,7 @@ async function runMigration(sqlFileName) {
     for (const statement of sqlStatements) {
       await new Promise((resolve, reject) => {
         console.log(`执行 SQL: ${statement.trim()}`);
-        db.connection.query(statement, (error, results) => {
+        db.pool.query(statement, (error, results) => {
           if (error) {
             console.error('执行 SQL 语句失败:', error);
             return reject(error);

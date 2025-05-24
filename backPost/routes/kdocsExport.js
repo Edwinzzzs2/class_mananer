@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const XLSX = require('xlsx');
+const { pool } = require('../db'); // 顶部引入
+const { logOperation, saveExcelData } = require('../utils/logOperation');
 
 // 请将你的cookie和csrf值配置在环境变量或安全存储中
 const KDOCS_COOKIE = process.env.KDOCS_COOKIE || '';
@@ -47,10 +49,12 @@ async function getExportResult(docId, fname, task_id) {
   return res.data;
 }
 
+
 // POST /kdocs-export { docId, fname }
 router.post('/kdocs-export', async (req, res) => {
   const { docId, fname } = req.body;
   if (!docId || !fname) {
+    logOperation('kdocs-export', req, '缺少docId或fname');
     return res.status(400).json({ code: 400, message: '缺少docId或fname' });
   }
   try {
@@ -58,6 +62,7 @@ router.post('/kdocs-export', async (req, res) => {
     const preload = await preloadExport(docId);
     const task_id = preload.task_id || (preload.data && preload.data.task_id);
     if (!task_id) {
+      logOperation('kdocs-export', req, '未获取到task_id');
       return res.status(500).json({ code: 500, message: '未获取到task_id', detail: preload });
     }
     // 2. 轮询result接口
@@ -66,11 +71,14 @@ router.post('/kdocs-export', async (req, res) => {
       await new Promise(r => setTimeout(r, 1000));
       result = await getExportResult(docId, fname, task_id);
       if (result.status === 'finished' && result.data && result.data.url) {
+        logOperation('kdocs-export', req, { docId, fname, url: result.data.url });
         return res.json({ code: 0, url: result.data.url });
       }
     }
+    logOperation('kdocs-export', req, '未能获取到下载url');
     return res.status(500).json({ code: 500, message: '未能获取到下载url', detail: result });
   } catch (err) {
+    logOperation('kdocs-export', req, err.message);
     return res.status(500).json({ code: 500, message: '流程出错', error: err.message });
   }
 });
@@ -79,6 +87,7 @@ router.post('/kdocs-export', async (req, res) => {
 router.post('/kdocs-direct-download', async (req, res) => {
   const { docId, referer } = req.body;
   if (!docId) {
+    logOperation('kdocs-direct-download', req, '缺少docId');
     return res.status(400).json({ code: 400, message: '缺少docId' });
   }
   try {
@@ -101,21 +110,24 @@ router.post('/kdocs-direct-download', async (req, res) => {
     // 不跟随重定向，拿到location
     const axiosRes = await axios.get(url, { headers, maxRedirects: 0, validateStatus: s => s >= 200 && s < 400 });
     if (axiosRes.status === 302 && axiosRes.headers.location) {
+      logOperation('kdocs-direct-download', req, { docId, url: axiosRes.headers.location });
       return res.json({ code: 0, url: axiosRes.headers.location });
     } else if (axiosRes.status === 200 && axiosRes.request.res.responseUrl) {
-      // 某些情况下直接返回文件
+      logOperation('kdocs-direct-download', req, { docId, url: axiosRes.request.res.responseUrl });
       return res.json({ code: 0, url: axiosRes.request.res.responseUrl });
     } else if (axiosRes.data && (axiosRes.data.download_url || axiosRes.data.url)) {
-      // 兼容返回 download_url 或 url 字段的情况
+      logOperation('kdocs-direct-download', req, { docId, url: axiosRes.data.download_url || axiosRes.data.url });
       return res.json({ code: 0, url: axiosRes.data.download_url || axiosRes.data.url });
     } else {
+      logOperation('kdocs-direct-download', req, '未能获取到下载url');
       return res.status(500).json({ code: 500, message: '未能获取到下载url', detail: axiosRes.data });
     }
   } catch (err) {
     if (err.response && err.response.status === 302 && err.response.headers.location) {
-      // 兼容axios抛出重定向异常
+      logOperation('kdocs-direct-download', req, { docId, url: err.response.headers.location });
       return res.json({ code: 0, url: err.response.headers.location });
     }
+    logOperation('kdocs-direct-download', req, err.message);
     return res.status(500).json({ code: 500, message: '流程出错', error: err.message });
   }
 });
@@ -124,6 +136,7 @@ router.post('/kdocs-direct-download', async (req, res) => {
 router.post('/kdocs-direct-download-and-parse', async (req, res) => {
   const { url, referer } = req.body;
   if (!url) {
+    logOperation('kdocs-direct-download-and-parse', req, '缺少url');
     return res.status(400).json({ code: 400, message: '请提供金山在线云文档URL' });
   }
   // 提取文档ID
@@ -138,6 +151,7 @@ router.post('/kdocs-direct-download-and-parse', async (req, res) => {
     }
     if (!docId || docId.length < 5) throw new Error('无效的文档ID');
   } catch (e) {
+    logOperation('kdocs-direct-download-and-parse', req, e.message);
     return res.status(400).json({ code: 400, message: '无效的金山在线云文档链接，请确保链接格式正确' });
   }
   try {
@@ -167,6 +181,7 @@ router.post('/kdocs-direct-download-and-parse', async (req, res) => {
     } else if (axiosRes.data && (axiosRes.data.download_url || axiosRes.data.url)) {
       finalDownloadUrl = axiosRes.data.download_url || axiosRes.data.url;
     } else {
+      logOperation('kdocs-direct-download-and-parse', req, '未能获取到下载url');
       return res.status(500).json({ code: 500, message: '未能获取到下载url', detail: axiosRes.data });
     }
     // 2. 下载并解析Excel
@@ -176,9 +191,39 @@ router.post('/kdocs-direct-download-and-parse', async (req, res) => {
     const worksheet = workbook.Sheets[firstSheetName];
     const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
     const filteredData = data.filter(row => row.some(cell => cell !== null && cell !== ''));
+    // 记录成功日志，包含更多信息
+    const successDetail = {
+      url: req.originalUrl,
+      body: req.body,
+      docId,
+      downloadUrl: finalDownloadUrl,
+      sheetName: firstSheetName,
+      rowCount: filteredData.length,
+      timestamp: new Date().toISOString(),
+    };
+    logOperation('kdocs-direct-download-and-parse', req, successDetail, (err, logId) => {
+      if (!err) {
+        saveExcelData(logId, null, filteredData, 'kdocs-direct-download-and-parse', null);
+      }
+    });
     return res.json({ code: 0, message: '解析成功，数据已更新', data: filteredData });
   } catch (err) {
-    return res.status(500).json({ code: 500, message: '流程出错', error: err.message });
+    // 记录错误日志
+    const errorDetail = {
+      url: req.originalUrl,
+      body: req.body,
+      docId,
+      error: err.message,
+      stack: err.stack,
+      timestamp: new Date().toISOString(),
+    };
+    logOperation('kdocs-direct-download-and-parse', req, errorDetail, (err, logId) => {
+      if (err) {
+        return res.status(500).json({ code: 500, message: '写入operation_log失败', error: err.message });
+      }
+      saveExcelData(logId, null, errorDetail, 'kdocs-direct-download-and-parse', null);
+      return res.status(500).json({ code: 500, message: '流程出错', error: err.message });
+    });
   }
 });
 

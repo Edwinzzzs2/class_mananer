@@ -585,3 +585,14 @@
     gap: 2px;
   }
 }
+
+.student-advisor-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  border: 1.5px solid #fff;
+  box-shadow: 0 0 0 1px #e6e6e6;
+  vertical-align: middle;
+}

@@ -1,9 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Upload, Button, Table, Card, Tag, ConfigProvider, Modal, Select, Form, message, Tooltip, Collapse, Input } from 'antd';
-import { UploadOutlined, UserOutlined, CalendarOutlined, QuestionCircleOutlined, SaveOutlined, SyncOutlined, EditOutlined, CloseOutlined } from '@ant-design/icons';
+import { Upload, Button, Table, Card, Tag, ConfigProvider, Modal, Select, Form, message, Tooltip, Collapse, Input, List } from 'antd';
+import { UploadOutlined, UserOutlined, CalendarOutlined, QuestionCircleOutlined, SaveOutlined, SyncOutlined, EditOutlined, CloseOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, LockFilled } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
 import zhCN from 'antd/lib/locale/zh_CN';
 import './App.css';
+import { getScheduleDetail, saveSchedule, kdocsDirectDownloadAndParse } from './services/scheduleService';
+import { debounce } from 'lodash';
 
 message.config({
   top: 80,
@@ -11,6 +13,11 @@ message.config({
   maxCount: 3,
   getContainer: () => document.body,
 });
+
+// 放在App函数外部或顶部
+function normalizeTimeSlot(s) {
+  return (s || '').replace(/：/g, ':').replace(/\s|　/g, '').trim();
+}
 
 function App() {
   const [loading, setLoading] = useState(false);
@@ -48,6 +55,18 @@ function App() {
   const [selectedAdvisor, setSelectedAdvisor] = useState('');
   const [selectedColor, setSelectedColor] = useState('#1677ff');
   const [editAdvisorGroup, setEditAdvisorGroup] = useState(null);
+  const [addStudentModalVisible, setAddStudentModalVisible] = useState(false);
+  const [currentTimeSlot, setCurrentTimeSlot] = useState(null);
+  const [newStudentName, setNewStudentName] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [addStudentAdvisor, setAddStudentAdvisor] = useState();
+  const [advisorForm] = Form.useForm(); // 新增：Form实例
+
+  const handleAdvisorInput = debounce((value) => {
+    setSelectedAdvisor(value);
+  }, 200);
 
   // 1. 获取所有时间段，并按周一~周日排序
   const weekOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -197,7 +216,18 @@ function App() {
       const weekColor = weekColorMap[week] || '#1677ff';
       return {
         title: (
-          <Tag color={weekColor} style={{ fontSize: 12, padding: '0 4px', minWidth: 40, textAlign: 'center' }}>{time}</Tag>
+          <div style={{
+            borderLeft: `4px solid ${weekColor}`,
+            fontWeight: 600,
+            fontSize: 14,
+            // color: weekColor,
+            padding: '2px 6px',
+            minWidth: 48,
+            textAlign: 'center',
+            borderRadius: 6,
+            margin: '0 auto',
+            background: 'none'
+          }}>{time}</div>
         ),
         dataIndex: time,
         key: time,
@@ -217,20 +247,85 @@ function App() {
           }
           if (cell.empty === 0) {
             return (
-              <Tooltip title={students.length > 0 ? students.join('、') : '无学生'} placement="top">
-                <Tag color="orange" style={{ fontSize: 12, fontWeight: 500, color: '#fa8c16', minWidth: 36, textAlign: 'center' }}>满({cell.filled})</Tag>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                color: '#fa8c16',
+                background: '#fff7e6',
+                border: '1.5px solid #fa8c16',
+                borderRadius: 16,
+                padding: '0 12px',
+                fontWeight: 700,
+                fontSize: 14,
+                minWidth: 40,
+                justifyContent: 'center',
+                boxShadow: '0 1px 2px rgba(250,140,22,0.04)'
+              }}>
+                <LockFilled style={{fontSize:12,marginRight:4}} />
+                <Tooltip title={students.length > 0 ? students.join('，') : '无学生'} placement="top">
+                  <span style={{cursor: students.length > 0 ? 'pointer' : 'default'}}>{`满(${cell.filled})`}</span>
               </Tooltip>
+              </span>
             );
           }
           if (cell.filled === 0) {
-            return <Tag color="green" style={{ fontSize: 12, fontWeight: 500, color: '#52c41a', minWidth: 36, textAlign: 'center' }}>空({cell.empty})</Tag>;
+            return <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              color: '#389e0d',
+              background: '#f6ffed',
+              border: '1.5px solid #389e0d',
+              borderRadius: 16,
+              padding: '0 12px',
+              fontWeight: 700,
+              fontSize: 14,
+              minWidth: 40,
+              justifyContent: 'center',
+              boxShadow: '0 1px 2px rgba(56,158,13,0.04)'
+            }}>
+              <PlusOutlined style={{fontSize:12,marginRight:4}} />
+              {cell.empty}
+            </span>;
           }
           return (
-            <span style={{ display: 'inline-flex', gap: 2 }}>
-              <Tooltip title={students.length > 0 ? students.join('、') : '无学生'} placement="top">
-                <Tag color="blue" style={{ fontSize: 12, fontWeight: 500, color: '#1677ff', minWidth: 32, textAlign: 'center' }}>报{cell.filled}</Tag>
+            <span style={{ display: 'inline-flex', gap: 6 }}>
+              <Tooltip title={students.length > 0 ? students.join('，') : '无学生'} placement="top">
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  color: '#1677ff',
+                  background: '#e6f4ff',
+                  border: '1.5px solid #1677ff',
+                  borderRadius: 16,
+                  padding: '0 12px',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  minWidth: 40,
+                  justifyContent: 'center',
+                  boxShadow: '0 1px 2px rgba(22,119,255,0.04)',
+                  cursor: students.length > 0 ? 'pointer' : 'default'
+                }}>
+                  <UserOutlined style={{fontSize:12,marginRight:4}} />
+                  {cell.filled}
+                </span>
               </Tooltip>
-              <Tag color="green" style={{ fontSize: 12, fontWeight: 500, color: '#52c41a', minWidth: 32, textAlign: 'center' }}>空{cell.empty}</Tag>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                color: '#389e0d',
+                background: '#f6ffed',
+                border: '1.5px solid #389e0d',
+                borderRadius: 16,
+                padding: '0 12px',
+                fontWeight: 700,
+                fontSize: 14,
+                minWidth: 40,
+                justifyContent: 'center',
+                boxShadow: '0 1px 2px rgba(56,158,13,0.04)'
+              }}>
+                <PlusOutlined style={{fontSize:12,marginRight:4}} />
+                {cell.empty}
+              </span>
             </span>
           );
         }
@@ -242,17 +337,17 @@ function App() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('http://localhost:3006/schedule/detail');
-        // const res = await fetch('/schedule/detail');
-        const result = await res.json();
+        const result = await getScheduleDetail();
         if (result.code === 0 && result.data) {
-          const { excelData, teacherStats, mergeMap, noClassMap, id, url: remoteUrl, title: remoteTitle } = result.data;
+          const { excelData, teacherStats, mergeMap, noClassMap, id, url: remoteUrl, title: remoteTitle, advisorStudentMap: remoteAdvisorStudentMap } = result.data;
           setExcelData(excelData);
           setClassData(excelData);
           setTeacherStats(teacherStats);
           setMergeMap(mergeMap || {});
           setNoClassMap(noClassMap || {});
           setScheduleId(id);
+          setAdvisorStudentMap(remoteAdvisorStudentMap || {});
+          localStorage.setItem('advisorStudentMap', JSON.stringify(remoteAdvisorStudentMap || {}));
           // 新增：下发url和title
           if (remoteUrl) {
             setUrl(remoteUrl);
@@ -352,9 +447,6 @@ function App() {
     let currentTeacherByCol = {};
     let lastTeacherByCol = {}; // 记录上一个老师名
     let lastCourseByCol = {};  // 记录上一个课程对象
-
-    // 在处理 slot.timeSlot 时，统一格式
-    const normalizeTimeSlot = s => (s || '').replace(/：/g, ':').replace(/\s|　/g, '');
 
     for (let row = 0; row < data.length; row++) {
       const rowArr = data[row];
@@ -492,6 +584,46 @@ function App() {
           message.error('该合并名称已被占用');
           return;
         }
+        // ====== 新增：合并老师时间段冲突校验 ======
+        // 收集所有老师的有学生的时间段
+        const slotMap = {};
+        let hasConflict = false;
+        let conflictInfo = [];
+        source.forEach(name => {
+          const t = teacherStats.find(t => t.name === name);
+          if (!t) return;
+          t.slots.forEach(slot => {
+            if (slot.students && slot.students.length > 0) {
+              const key = slot.timeSlot;
+              if (!slotMap[key]) {
+                slotMap[key] = [];
+              }
+              slotMap[key].push(name);
+            }
+          });
+        });
+        Object.entries(slotMap).forEach(([time, names]) => {
+          if (names.length > 1) {
+            hasConflict = true;
+            conflictInfo.push(`${time}：${names.join('、')}`);
+          }
+        });
+        if (hasConflict) {
+          Modal.error({
+            title: '合并失败：存在老师时间冲突',
+            content: (
+              <div>
+                <div>以下时间段有多个老师排课，不能合并：</div>
+                <ul style={{marginTop: 8, color: '#d4380d'}}>
+                  {conflictInfo.map((info, idx) => <li key={idx}>{info}</li>)}
+                </ul>
+                <div style={{marginTop: 8, color: '#888'}}>请确保同一时间段只有一位老师有学生。</div>
+              </div>
+            )
+          });
+          return;
+        }
+        // ====== 校验结束 ======
         const newMap = { ...mergeMap };
         if (editMergeGroup) {
           Object.keys(newMap).forEach(k => {
@@ -517,6 +649,12 @@ function App() {
   };
   // 取消某个合并
   const handleRemoveMerge = (mergedName) => {
+    Modal.confirm({
+      title: `确定要取消合并关系"${mergedName}"吗？`,
+      content: '取消后将恢复原始老师名称',
+      okText: '确定',
+      cancelText: '取消',
+      onOk: () => {
     const newMap = { ...mergeMap };
     Object.keys(newMap).forEach(k => {
       if ((Array.isArray(newMap[k]) && newMap[k][0] === mergedName) || newMap[k] === mergedName) {
@@ -526,6 +664,9 @@ function App() {
     setMergeMap(newMap);
     localStorage.setItem('mergeMap', JSON.stringify(newMap));
     setTeacherStats(ts => [...ts]); // 强制刷新，确保Tag消失
+        message.success('已取消合并关系');
+      }
+    });
   };
 
   // 更新noClassMap并持久化
@@ -584,49 +725,53 @@ function App() {
     e.stopPropagation();
     setAdvisorModalVisible(true);
     setSelectedStudents([]);
-    setSelectedAdvisor('');
-    setSelectedColor('#1677ff');
+    advisorForm.resetFields(); // 重置表单
     setEditAdvisorGroup(null);
   };
 
   const handleEditAdvisor = (advisor) => {
     setAdvisorModalVisible(true);
     setSelectedStudents(advisorStudentMap[advisor].students);
-    setSelectedAdvisor(advisor);
-    setSelectedColor(advisorStudentMap[advisor].color || '#1677ff');
+    advisorForm.setFieldsValue({
+      advisor: advisor,
+      color: advisorStudentMap[advisor].color || '#1677ff'
+    });
     setEditAdvisorGroup(advisor);
   };
 
   const handleAdvisorCancel = () => {
     setAdvisorModalVisible(false);
     setEditAdvisorGroup(null);
+    advisorForm.resetFields(); // 重置表单
   };
 
   const handleSetAdvisor = () => {
-    if (!selectedAdvisor || selectedStudents.length === 0) {
+    const values = advisorForm.getFieldsValue();
+    const advisorName = values.advisor?.trim();
+    if (!advisorName || selectedStudents.length === 0) {
       message.warning('请选择顾问老师和学生');
       return;
     }
-
-    // 检查顾问名称是否重复
-    if (editAdvisorGroup !== selectedAdvisor && advisorStudentMap[selectedAdvisor]) {
+    // 检查顾问名称是否重复（排除自己）
+    if (editAdvisorGroup !== advisorName && advisorStudentMap[advisorName]) {
       message.error('该顾问名称已存在');
       return;
     }
-
     const newMap = { ...advisorStudentMap };
-    if (editAdvisorGroup) {
+    if (editAdvisorGroup && editAdvisorGroup !== advisorName) {
+      // 顾问名变更，删除旧key
       delete newMap[editAdvisorGroup];
     }
-    newMap[selectedAdvisor] = {
+    newMap[advisorName] = {
       students: selectedStudents,
-      color: selectedColor
+      color: values.color || selectedColor
     };
     setAdvisorStudentMap(newMap);
     localStorage.setItem('advisorStudentMap', JSON.stringify(newMap));
     message.success('设置成功');
     setAdvisorModalVisible(false);
     setEditAdvisorGroup(null);
+    advisorForm.resetFields(); // 重置表单
   };
 
   // 获取所有未被分配的学生
@@ -658,12 +803,7 @@ function App() {
         url,
         title,
       };
-      const res = await fetch('http://localhost:3006/schedule/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const result = await res.json();
+      const result = await saveSchedule(body);
       if (result.code === 0) {
         message.success('保存成功');
         // 更新id
@@ -694,14 +834,7 @@ function App() {
   const handleUpdateFromKdocs = async () => {
     setUpdateLoading(true);
     try {
-      const res = await fetch('/schedule/kdocs-direct-download-and-parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: url // 取自当前界面上的url状态
-        })
-      });
-      const result = await res.json();
+      const result = await kdocsDirectDownloadAndParse(url);
       if (result.code === 0 && result.data) {
         setExcelData(result.data);
         localStorage.setItem('excelData', JSON.stringify(result.data));
@@ -739,6 +872,11 @@ function App() {
 
   // 在组件内添加移除学生函数
   const handleRemoveStudentFromAdvisor = (advisor, student) => {
+    Modal.confirm({
+      title: `确定要将学生"${student}"从顾问"${advisor}"中移除吗？`,
+      okText: '确定',
+      cancelText: '取消',
+      onOk: () => {
     const newMap = { ...advisorStudentMap };
     newMap[advisor] = {
       ...newMap[advisor],
@@ -747,7 +885,236 @@ function App() {
     setAdvisorStudentMap(newMap);
     localStorage.setItem('advisorStudentMap', JSON.stringify(newMap));
     message.success('已移除');
+      }
+    });
   };
+
+  // 添加新的处理函数
+  const handleAddStudentClick = (timeSlot) => {
+    setCurrentTimeSlot(timeSlot);
+    setNewStudentName('');
+    setAddStudentAdvisor();
+    setAddStudentModalVisible(true);
+  };
+
+  const handleAddNewStudent = () => {
+    if (!newStudentName.trim()) {
+      message.error('请输入学生姓名');
+      return;
+    }
+    const mergedNames = teacherDetailData.mergedFrom || [teacherDetailData.name];
+    let added = false;
+    const newTeacherStats = teacherStats.map(teacher => {
+      if (!added && mergedNames.includes(teacher.name)) {
+        const newSlots = teacher.slots.map(slot => {
+          if (!added && normalizeTimeSlot(slot.timeSlot) === normalizeTimeSlot(currentTimeSlot)) {
+            if (slot.students.includes(newStudentName)) {
+              message.error('该学生已存在');
+              added = true;
+              return slot;
+            }
+            const newStudents = [...slot.students, newStudentName];
+            added = true;
+            return {
+              ...slot,
+              students: newStudents,
+              filledCells: newStudents.length,
+              emptyCells: Math.max(0, slot.totalCells - newStudents.length)
+            };
+          }
+          return slot;
+        });
+        return {
+          ...teacher,
+          slots: newSlots,
+          filledSlots: newSlots.reduce((sum, s) => sum + s.filledCells, 0),
+          availableSlots: newSlots.reduce((sum, s) => sum + s.emptyCells, 0)
+        };
+      }
+      return teacher;
+    });
+    if (added) {
+      setTeacherStats(newTeacherStats);
+      localStorage.setItem('teacherStats', JSON.stringify(newTeacherStats));
+      // 新增：如果选择了顾问老师，自动加入顾问-学生关系
+      if (addStudentAdvisor) {
+        const newMap = { ...advisorStudentMap };
+        const advisorData = newMap[addStudentAdvisor] || { students: [], color: '#1677ff' };
+        if (!advisorData.students.includes(newStudentName)) {
+          advisorData.students = [...advisorData.students, newStudentName];
+          newMap[addStudentAdvisor] = advisorData;
+          setAdvisorStudentMap(newMap);
+          localStorage.setItem('advisorStudentMap', JSON.stringify(newMap));
+        }
+      }
+      setAddStudentModalVisible(false);
+      message.success('添加成功');
+    }
+  };
+
+  const handleRemoveStudent = (timeSlot, student) =>
+    Modal.confirm({
+      title: `确定要删除学生"${student}"吗？`,
+      okText: '确定',
+      cancelText: '取消',
+      onOk: () => {
+        // 1. 删除所有老师 slots 里的该学生
+        let deleted = false;
+        const newTeacherStats = teacherStats.map(teacher => {
+          const newSlots = teacher.slots.map(slot => {
+            // 如果指定了 timeSlot，只删该时间段，否则所有时间段都删
+            if (!timeSlot || normalizeTimeSlot(slot.timeSlot) === normalizeTimeSlot(timeSlot)) {
+              const newStudents = slot.students.filter(s => (s || '').trim() !== (student || '').trim());
+              if (newStudents.length !== slot.students.length) deleted = true;
+              return {
+                ...slot,
+                students: newStudents,
+                filledCells: newStudents.length,
+                emptyCells: Math.max(0, slot.totalCells - newStudents.length)
+              };
+            }
+            return slot;
+          });
+          return {
+            ...teacher,
+            slots: newSlots,
+            filledSlots: newSlots.reduce((sum, s) => sum + s.filledCells, 0),
+            availableSlots: newSlots.reduce((sum, s) => sum + s.emptyCells, 0)
+          };
+        });
+        if (deleted) {
+          setTeacherStats(newTeacherStats);
+          localStorage.setItem('teacherStats', JSON.stringify(newTeacherStats));
+        }
+
+        // 2. 删除所有顾问-学生关系里的该学生
+        let updated = false;
+        const newAdvisorMap = { ...advisorStudentMap };
+        Object.keys(newAdvisorMap).forEach(advisor => {
+          const before = newAdvisorMap[advisor].students.length;
+          newAdvisorMap[advisor].students = newAdvisorMap[advisor].students.filter(s => (s || '').trim() !== (student || '').trim());
+          if (newAdvisorMap[advisor].students.length !== before) updated = true;
+        });
+        if (updated) {
+          setAdvisorStudentMap(newAdvisorMap);
+          localStorage.setItem('advisorStudentMap', JSON.stringify(newAdvisorMap));
+        }
+
+        // 3. 如果是老师详情弹窗，刷新数据
+        if (teacherDetailData) {
+          const latest = mergedTeacherStats.find(t => t.name === teacherDetailData.name);
+          if (latest) setTeacherDetailData(latest);
+        }
+      }
+    });
+
+  // 新增：导入顾问-学生关系
+  const handleImportAdvisorStudent = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      // 解析为 { 顾问: { students: [...], color: '#1677ff' } }
+      const newMap = {};
+      for (let col = 0; col < json[0].length; col++) {
+        const advisor = (json[0][col] || '').trim();
+        if (!advisor) continue;
+        const students = [];
+        for (let row = 1; row < json.length; row++) {
+          const student = (json[row][col] || '').trim();
+          if (student) students.push(student);
+        }
+        // 随机分配一种颜色
+        const color = advisorColorOptions[Math.floor(Math.random() * advisorColorOptions.length)].value;
+        newMap[advisor] = { students, color };
+      }
+      setAdvisorStudentMap(newMap);
+      localStorage.setItem('advisorStudentMap', JSON.stringify(newMap));
+      message.success('导入成功');
+    };
+    reader.readAsArrayBuffer(file);
+    return false;
+  };
+
+  // 顾问颜色可选项
+  const advisorColorOptions = [
+    { label: '蓝色', value: '#1677ff' },
+    { label: '绿色', value: '#52c41a' },
+    { label: '橙色', value: '#fa8c16' },
+    { label: '红色', value: '#f5222d' },
+    { label: '紫色', value: '#722ed1' },
+    { label: '青色', value: '#13c2c2' },
+    { label: '粉红色', value: '#eb2f96' },
+    { label: '棕色', value: '#a0522d' },
+    { label: '灰色', value: '#888888' },
+    { label: '黄色', value: '#fadb14' },
+  ];
+
+  const handleRefreshFromServer = async () => {
+    setRefreshing(true);
+    try {
+      const result = await getScheduleDetail();
+      if (result.code === 0 && result.data) {
+        const { excelData, teacherStats, mergeMap, noClassMap, id, url: remoteUrl, title: remoteTitle, advisorStudentMap: remoteAdvisorStudentMap } = result.data;
+        setExcelData(excelData);
+        setClassData(excelData);
+        setTeacherStats(teacherStats);
+        setMergeMap(mergeMap || {});
+        setNoClassMap(noClassMap || {});
+        setScheduleId(id);
+        setAdvisorStudentMap(remoteAdvisorStudentMap || {});
+        if (remoteUrl) setUrl(remoteUrl);
+        if (remoteTitle) setTitle(remoteTitle);
+        // 同步 localStorage
+        localStorage.setItem('excelData', JSON.stringify(excelData));
+        localStorage.setItem('classData', JSON.stringify(excelData));
+        localStorage.setItem('teacherStats', JSON.stringify(teacherStats));
+        localStorage.setItem('mergeMap', JSON.stringify(mergeMap || {}));
+        localStorage.setItem('noClassMap', JSON.stringify(noClassMap || {}));
+        localStorage.setItem('advisorStudentMap', JSON.stringify(remoteAdvisorStudentMap || {}));
+        localStorage.setItem('scheduleId', id);
+        localStorage.setItem('url', remoteUrl || '');
+        localStorage.setItem('title', remoteTitle || '');
+        message.success('已刷新数据库最新数据');
+      } else {
+        message.error(result.message || '刷新失败');
+      }
+    } catch (e) {
+      message.error('刷新失败，服务器连接异常');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (teacherDetailVisible && teacherDetailData) {
+      const latest = mergedTeacherStats.find(t => t.name === teacherDetailData.name);
+      if (latest) setTeacherDetailData(latest);
+    }
+  }, [teacherStats, teacherDetailVisible, mergedTeacherStats]);
+
+  const handleSearch = (value) => {
+    const results = [];
+    teacherStats.forEach(teacher => {
+      teacher.slots.forEach(slot => {
+        if (slot.students.some(student => student.toLowerCase().includes(value.toLowerCase()))) {
+          results.push({ teacher: teacher.name, timeSlot: slot.timeSlot, students: slot.students });
+        }
+      });
+    });
+    setSearchResults(results);
+    setSearchVisible(true);
+  };
+
+  function findAdvisorNameByStudent(student) {
+    const key = (student || '').replace(/　/g, '').trim();
+    const entry = Object.entries(advisorStudentMap).find(
+      ([, data]) => (data.students || []).some(s => (s || '').replace(/　/g, '').trim() === key)
+    );
+    return entry ? entry[0] : '';
+  }
 
   return (
     <ConfigProvider locale={zhCN}>
@@ -838,9 +1205,9 @@ function App() {
                   loading={updateLoading}
                   onClick={handleUpdateFromKdocs}
                 >
-                  更新数据
+                  拉取表格数据
                 </Button>
-                <Upload
+                {/* <Upload
                   accept=".xlsx,.xls"
                   beforeUpload={handleFileUpload}
                   showUploadList={false}
@@ -848,7 +1215,17 @@ function App() {
                   <Button icon={<UploadOutlined />} type="primary" size="large">
                     导入Excel课程表
                   </Button>
-                </Upload>
+                </Upload> */}
+
+                <Button
+                  loading={refreshing}
+                  icon={<ReloadOutlined />}
+                  onClick={handleRefreshFromServer}
+                  type="primary" 
+                  size="large"
+                >
+                  刷新
+                </Button>
                 <Button onClick={handleSave} type="primary" size="large" icon={<SaveOutlined />} loading={saveLoading}>
                   保存
                 </Button>
@@ -922,11 +1299,19 @@ function App() {
                             closable
                             onClose={e => {
                               e.preventDefault();
+                              Modal.confirm({
+                                title: `确定要移除"${teacher}"的"${slot}"无课时设置吗？`,
+                                okText: '确定',
+                                cancelText: '取消',
+                                onOk: () => {
                               // 移除该老师该时间段
                               const newMap = { ...noClassMap };
                               newMap[teacher] = newMap[teacher].filter(s => s !== slot);
                               if (newMap[teacher].length === 0) delete newMap[teacher];
                               updateNoClassMap(newMap);
+                                  message.success('已移除');
+                                }
+                              });
                             }}
                             style={{ marginLeft: 6, marginRight: 0, fontSize: 13 }}
                           >
@@ -952,15 +1337,23 @@ function App() {
                 顾问-学生关系
                 <span style={{ marginLeft: 16 }}>
                   <a style={{ color: '#1677ff', fontWeight: 500, fontSize: 14, cursor: 'pointer' }} onClick={(e) => showAdvisorModal(e)}>添加关系</a>
+                  <Upload
+                    accept='.xlsx,.xls'
+                    showUploadList={false}
+                    beforeUpload={handleImportAdvisorStudent}
+                  >
+                    <Button type="link" size="small" style={{ marginLeft: 8 }}>导入</Button>
+                  </Upload>
                 </span>
               </span>
             }>
-              {/* 构建学生-顾问颜色映射，供下方使用 */}
+              {/* 构建学生-顾问颜色映射，供下方使用（标准化学生名） */}
               {(() => {
                 const studentAdvisorColorMap = {};
                 Object.entries(advisorStudentMap).forEach(([advisor, data]) => {
                   (data.students || []).forEach(stu => {
-                    studentAdvisorColorMap[stu] = data.color || '#1677ff';
+                    const key = (stu || '').replace(/　/g, '').trim();
+                    studentAdvisorColorMap[key] = data.color || '#1677ff';
                   });
                 });
                 return (
@@ -994,40 +1387,48 @@ function App() {
                           </Button>
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                          {data.students.map(student => {
-                            const advisorColor = studentAdvisorColorMap[student];
-                            const hasAdvisor = !!advisorColor;
+                          {data.students.length > 0 ? data.students.map(student => {
+                            const key = (student || '').replace(/　/g, '').trim();
+                            const advisorColor = studentAdvisorColorMap[key];
+                            const advisorName = findAdvisorNameByStudent(student);
                             return (
-                              <span key={student} style={{ display: 'inline-block', marginRight: 2, position: 'relative' }}>
-                                <span style={{
-                                  display: 'inline-block',
-                                  color: hasAdvisor ? advisorColor : '#999',
-                                  border: hasAdvisor ? `1.5px solid ${advisorColor}` : '1.5px solid #eee',
-                                  background: hasAdvisor ? '#f6faff' : '#f8f8f8',
-                                  borderRadius: 8,
-                                  fontWeight: 600,
+                              <Tooltip title={advisorName ? `${advisorName}` : '无顾问'} key={student}>
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    background: '#f8f8f8',
+                                    color: '#222', // 统一颜色
+                                    borderRadius: 12,
+                                    padding: '2px 10px 2px 6px',
                                   fontSize: 13,
-                                  padding: '2px 12px 2px 12px',
                                   marginRight: 2,
-                                  boxShadow: hasAdvisor ? '0 1px 4px rgba(0,0,0,0.07)' : 'none',
-                                  transition: 'all 0.2s',
-                                  position: 'relative',
-                                }} title={Object.entries(advisorStudentMap).find(([_, data]) => (data.students || []).includes(student))?.[0] || ''}>
+                                    border: '1px solid #e6e6e6',
+                                    transition: 'background 0.2s',
+                                    minHeight: 22
+                                  }}
+                                >
+                                  {/* 顾问色块 */}
+                                  <span style={{
+                                    display: 'inline-block',
+                                    width: 10,
+                                    height: 10,
+                                    borderRadius: '50%',
+                                    background: advisorColor || '#ccc',
+                                    marginRight: 6,
+                                    border: '1.5px solid #fff',
+                                    boxShadow: '0 0 0 1px #e6e6e6',
+                                    verticalAlign: 'middle',
+                                  }} />
                                   {student}
                                   <CloseOutlined
-                                    style={{
-                                      fontSize: 12,
-                                      color: hasAdvisor ? advisorColor : '#999',
-                                      marginLeft: 4,
-                                      cursor: 'pointer',
-                                      verticalAlign: 'middle',
-                                    }}
+                                    style={{ fontSize: 12, color: '#bbb', marginLeft: 4, cursor: 'pointer' }}
                                     onClick={() => handleRemoveStudentFromAdvisor(advisor, student)}
                                   />
                                 </span>
-                              </span>
+                              </Tooltip>
                             );
-                          })}
+                          }) : <span style={{ color: '#aaa' }}>无</span>}
                         </div>
                       </div>
                     ))}
@@ -1038,7 +1439,20 @@ function App() {
           </Collapse>
           {/* 只保留时间段汇总表 */}
           <Card
-            title={<span style={{ fontWeight: 600 }}>按时间段汇总表</span>}
+            title={
+              <span style={{ fontWeight: 600 }}>
+                按时间段汇总表
+                <Button
+                  type="primary"
+                  icon={<SearchOutlined />}
+                  onClick={() => setSearchVisible(true)}
+                  size="small"
+                  style={{ marginLeft: 16 }}
+                >
+                  搜索
+                </Button>
+              </span>
+            }
             style={{ marginTop: 0, marginBottom: 24, width: '100%', maxWidth: '100vw' }}
             bordered
           >
@@ -1057,45 +1471,45 @@ function App() {
                   backgroundColor: index % 2 === 0 ? '#fafafa' : '#ffffff',
                 },
               })}
-              summary={(pageData) => {
-                const totalRow = { name: '合计' };
-                allTimeSlots.forEach(time => {
-                  let totalFilled = 0;
-                  let totalEmpty = 0;
-                  pageData.forEach(row => {
-                    const cell = row[time];
-                    if (cell) {
-                      totalFilled += cell.filled;
-                      totalEmpty += cell.empty;
-                    }
-                  });
-                  totalRow[time] = {
-                    filled: totalFilled,
-                    empty: totalEmpty,
-                    total: totalFilled + totalEmpty
-                  };
-                });
-                return (
-                  <Table.Summary fixed>
-                    <Table.Summary.Row>
-                      <Table.Summary.Cell index={0} colSpan={1}>
-                        <span style={{ fontWeight: 600, fontSize: 15 }}>合计</span>
-                      </Table.Summary.Cell>
-                      {allTimeSlots.map((time, index) => {
-                        const cell = totalRow[time];
-                        if (!cell) return <Table.Summary.Cell key={time} index={index + 1} />;
-                        return (
-                          <Table.Summary.Cell key={time} index={index + 1}>
-                            <span style={{ fontSize: 15, fontWeight: 500 }}>
-                              报{cell.filled} 空{cell.empty}
-                            </span>
-                          </Table.Summary.Cell>
-                        );
-                      })}
-                    </Table.Summary.Row>
-                  </Table.Summary>
-                );
-              }}
+              // summary={(pageData) => {
+              //   const totalRow = { name: '合计' };
+              //   allTimeSlots.forEach(time => {
+              //     let totalFilled = 0;
+              //     let totalEmpty = 0;
+              //     pageData.forEach(row => {
+              //       const cell = row[time];
+              //       if (cell) {
+              //         totalFilled += cell.filled;
+              //         totalEmpty += cell.empty;
+              //       }
+              //     });
+              //     totalRow[time] = {
+              //       filled: totalFilled,
+              //       empty: totalEmpty,
+              //       total: totalFilled + totalEmpty
+              //     };
+              //   });
+              //   return (
+              //     <Table.Summary fixed>
+              //       <Table.Summary.Row>
+              //         <Table.Summary.Cell index={0} colSpan={1}>
+              //           <span style={{ fontWeight: 600, fontSize: 15 }}>合计</span>
+              //         </Table.Summary.Cell>
+              //         {allTimeSlots.map((time, index) => {
+              //           const cell = totalRow[time];
+              //           if (!cell) return <Table.Summary.Cell key={time} index={index + 1} />;
+              //           return (
+              //             <Table.Summary.Cell key={time} index={index + 1}>
+              //               <span style={{ fontSize: 15, fontWeight: 500 }}>
+              //                 报{cell.filled}  空{cell.empty}
+              //               </span>
+              //             </Table.Summary.Cell>
+              //           );
+              //         })}
+              //       </Table.Summary.Row>
+              //     </Table.Summary>
+              //   );
+              // }}
             />
           </Card>
         </div>
@@ -1202,17 +1616,31 @@ function App() {
           onOk={handleSetAdvisor}
           okText="确定"
           cancelText="取消"
+          bodyStyle={{
+            maxHeight: '70vh',
+            overflowY: 'auto',
+            padding: 24
+          }}
         >
-          <Form layout="vertical">
-            <Form.Item label="顾问老师">
+          <Form 
+            form={advisorForm}
+            layout="vertical"
+            initialValues={{
+              color: '#1677ff'
+            }}
+          >
+            <Form.Item 
+              label="顾问老师" 
+              name="advisor"
+              rules={[{ required: true, message: '请输入顾问老师姓名' }]}
+            >
               <Input
                 placeholder="请输入顾问老师姓名"
-                value={selectedAdvisor}
-                onChange={e => setSelectedAdvisor(e.target.value)}
                 style={{ width: '100%' }}
               />
             </Form.Item>
             <Form.Item label="选择学生">
+              <div style={{ maxHeight: 300, overflowY: 'auto' }}>
               <Select
                 mode="multiple"
                 allowClear
@@ -1222,26 +1650,21 @@ function App() {
                 onChange={setSelectedStudents}
                 style={{ width: '100%' }}
               />
+              </div>
             </Form.Item>
-            <Form.Item label="选择颜色">
+            <Form.Item 
+              label="选择颜色" 
+              name="color"
+            >
               <Select
-                value={selectedColor}
-                onChange={setSelectedColor}
                 style={{ width: '100%' }}
-                options={[
-                  { label: '蓝色', value: '#1677ff' },
-                  { label: '绿色', value: '#52c41a' },
-                  { label: '橙色', value: '#fa8c16' },
-                  { label: '红色', value: '#f5222d' },
-                  { label: '紫色', value: '#722ed1' },
-                  { label: '青色', value: '#13c2c2' },
-                ]}
+                options={advisorColorOptions}
               />
             </Form.Item>
           </Form>
         </Modal>
 
-        {/* 老师详情弹窗 */}
+        {/* 修改老师详情弹窗 */}
         <Modal
           title={teacherDetailData ? `${teacherDetailData.name} 课程详情` : ''}
           open={teacherDetailVisible}
@@ -1263,13 +1686,14 @@ function App() {
         >
           {teacherDetailData && (
             (() => {
-              // 构建学生-顾问颜色映射
               const studentAdvisorColorMap = {};
               Object.entries(advisorStudentMap).forEach(([advisor, data]) => {
                 (data.students || []).forEach(stu => {
-                  studentAdvisorColorMap[stu] = data.color || '#1677ff';
+                  const key = (stu || '').replace(/　/g, '').trim();
+                  studentAdvisorColorMap[key] = data.color || '#1677ff';
                 });
               });
+
               return (
                 <div style={{ 
                   flex: 1,
@@ -1279,16 +1703,13 @@ function App() {
                   {teacherDetailData.slots
                     .slice()
                     .filter(slot => {
-                      // 只显示有课程的时间段
                       const hasClass = slot.filledCells > 0 || slot.emptyCells > 0;
-                      // 检查是否在无课时设置中
                       const isNoClass = teacherDetailData.mergedFrom?.some(name => 
                         noClassMap[name]?.includes(slot.timeSlot)
                       );
                       return hasClass && !isNoClass;
                     })
                     .sort((a, b) => {
-                      // 星期排序
                       const weekOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
                       const getWeekIdx = s => weekOrder.findIndex(w => s.includes(w));
                       const getTimeNum = s => {
@@ -1302,56 +1723,155 @@ function App() {
                       return getTimeNum(a.timeSlot) - getTimeNum(b.timeSlot);
                     })
                     .map(slot => {
-                      const weekOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
                       const week = weekOrder.find(w => slot.timeSlot.includes(w)) || '';
                       const weekColor = weekColorMap[week] || '#1677ff';
                       return (
-                        <div key={slot.timeSlot} style={{ marginBottom: 16, borderBottom: '1px solid #f0f0f0', paddingBottom: 10 }}>
-                          <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                            <span style={{ color: weekColor }}>{week}</span>
-                            <span style={{ color: '#1677ff', marginLeft: 4 }}>{slot.timeSlot.replace(week, '')}</span>
-                          </div>
-                          <div style={{ fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
-                            <span style={{ color: '#1890ff', fontWeight: 500, marginRight: 6 }}>学生：</span>
-                            {slot.students.length > 0 ? (
-                              <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                {slot.students.map(stu => {
-                                  const advisorColor = studentAdvisorColorMap[stu];
-                                  const hasAdvisor = !!advisorColor;
-                                  return (
-                                    <span key={stu} style={{ display: 'inline-block', marginRight: 2 }}>
-                                      <span style={{
-                                        display: 'inline-block',
-                                        color: hasAdvisor ? advisorColor : '#999',
-                                        border: hasAdvisor ? `1.5px solid ${advisorColor}` : '1.5px solid #eee',
-                                        background: hasAdvisor ? '#f6faff' : '#f8f8f8',
+                        <div key={slot.timeSlot} style={{
+                          marginBottom: 12,
+                          borderBottom: '1px solid #f0f0f0',
+                          paddingBottom: 12,
+                          background: '#fff',
                                         borderRadius: 8,
+                          boxShadow: 'none'
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            marginBottom: 6
+                          }}>
+                            <div style={{
                                         fontWeight: 600,
-                                        fontSize: 13,
-                                        padding: '2px 12px',
-                                        marginRight: 2,
-                                        boxShadow: hasAdvisor ? '0 1px 4px rgba(0,0,0,0.07)' : 'none',
-                                        transition: 'all 0.2s',
-                                      }} title={Object.entries(advisorStudentMap).find(([_, data]) => (data.students || []).includes(stu))?.[0] || ''}>
-                                        {stu}
-                                      </span>
-                                    </span>
-                                  );
-                                })}
-                              </span>
-                            ) : (
-                              <span style={{ color: '#aaa' }}>无</span>
-                            )}
+                              fontSize: 15,
+                              display: 'flex',
+                              alignItems: 'center'
+                            }}>
+                              <span style={{
+                                display: 'inline-block',
+                                width: 4,
+                                height: 16,
+                                background: weekColor,
+                                borderRadius: 2,
+                                marginRight: 8
+                              }} />
+                              {slot.timeSlot}
+                            </div>
+                            <Button
+                              type="text"
+                              shape="circle"
+                              icon={<PlusOutlined />}
+                              size="small"
+                              onClick={() => handleAddStudentClick(slot.timeSlot)}
+                              style={{ color: '#1677ff' }}
+                            />
                           </div>
-                          <div style={{ fontSize: 14, marginBottom: 2 }}>
-                            <span style={{ color: '#1677ff', fontWeight: 700, background: '#e6f4ff', borderRadius: 4, padding: '2px 10px', marginRight: 6 }}>
-                              报{slot.filledCells}
+                          <div style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: 6,
+                            marginBottom: 6
+                          }}>
+                            {slot.students.length > 0 ? slot.students.map(stu => {
+                              const key = (stu || '').replace(/　/g, '').trim();
+                              const advisorColor = studentAdvisorColorMap[key];
+                              const advisorName = findAdvisorNameByStudent(stu);
+                              return (
+                                <Tooltip title={advisorName ? `${advisorName}` : '无顾问'} key={stu}>
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      background: '#f8f8f8',
+                                      color: '#222', // 统一颜色
+                                      borderRadius: 12,
+                                      padding: '2px 10px 2px 6px',
+                                        fontSize: 13,
+                                        marginRight: 2,
+                                      border: '1px solid #e6e6e6',
+                                      transition: 'background 0.2s',
+                                      minHeight: 22
+                                    }}
+                                  >
+                                    {/* 顾问色块 */}
+                                    <span style={{
+                                      display: 'inline-block',
+                                      width: 10,
+                                      height: 10,
+                                      borderRadius: '50%',
+                                      background: advisorColor || '#ccc',
+                                      marginRight: 6,
+                                      border: '1.5px solid #fff',
+                                      boxShadow: '0 0 0 1px #e6e6e6',
+                                      verticalAlign: 'middle',
+                                    }} />
+                                        {stu}
+                                    <CloseOutlined
+                                      style={{
+                                        fontSize: 12,
+                                        color: '#bbb',
+                                        marginLeft: 4,
+                                        cursor: 'pointer'
+                                      }}
+                                      onClick={() => handleRemoveStudent(null, stu)}
+                                    />
+                                      </span>
+                                </Tooltip>
+                              );
+                            }) : <span style={{ color: '#aaa' }}>无</span>}
+                          </div>
+                          <div style={{ fontSize: 13, color: '#888', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              color: '#1677ff',
+                              background: '#e6f4ff',
+                              border: '1.5px solid #1677ff',
+                              borderRadius: 16,
+                              padding: '0 12px',
+                              fontWeight: 700,
+                              fontSize: 14,
+                              minWidth: 40,
+                              justifyContent: 'center',
+                              boxShadow: '0 1px 2px rgba(22,119,255,0.04)'
+                            }}>
+                              <UserOutlined style={{fontSize:12,marginRight:4}} />
+                              {slot.filledCells}
                             </span>
                             {slot.emptyCells === 0 ? (
-                              <span style={{ color: '#fa8c16', fontWeight: 700, background: '#fff7e6', borderRadius: 4, padding: '2px 10px', marginRight: 6 }}>满</span>
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                color: '#fa8c16',
+                                background: '#fff7e6',
+                                border: '1.5px solid #fa8c16',
+                                borderRadius: 16,
+                                padding: '0 12px',
+                                fontWeight: 700,
+                                fontSize: 14,
+                                minWidth: 40,
+                                justifyContent: 'center',
+                                boxShadow: '0 1px 2px rgba(250,140,22,0.04)'
+                              }}>
+                                <LockFilled style={{fontSize:12,marginRight:4}} />
+                                满
+                              </span>
                             ) : (
-                              <span style={{ color: '#52c41a', fontWeight: 700, background: '#f6ffed', borderRadius: 4, padding: '2px 10px', marginRight: 6 }}>
-                                空{slot.emptyCells}
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                color: '#389e0d',
+                                background: '#f6ffed',
+                                border: '1.5px solid #389e0d',
+                                borderRadius: 16,
+                                padding: '0 12px',
+                                fontWeight: 700,
+                                fontSize: 14,
+                                minWidth: 40,
+                                justifyContent: 'center',
+                                boxShadow: '0 1px 2px rgba(56,158,13,0.04)'
+                              }}>
+                                <PlusOutlined style={{fontSize:12,marginRight:4}} />
+                                {slot.emptyCells}
                               </span>
                             )}
                             <span style={{ color: '#999', margin: '0 4px' }}>/</span>
@@ -1363,14 +1883,14 @@ function App() {
                             height: 3,
                             background: '#f0f0f0',
                             borderRadius: 6,
-                            margin: '8px 0 0 0',
+                            margin: '6px 0 0 0',
                             position: 'relative',
                             overflow: 'hidden'
                           }}>
                             <div style={{
                               width: `${(slot.filledCells / slot.totalCells) * 100}%`,
                               height: '100%',
-                              background: slot.emptyCells === 0 ? '#fa8c16' : '#1677ff',
+                              background: slot.emptyCells === 0 ? '#ffe7ba' : '#bae0ff',
                               borderRadius: 6,
                               transition: 'width 0.3s'
                             }} />
@@ -1384,20 +1904,67 @@ function App() {
           )}
         </Modal>
 
-        <Button
-          type="primary"
-          onClick={() => {
-            message.success('又偷偷点我，想我啦？')
-            console.log({mergeMap})
-            console.log({mergeSource})
-            console.log({allTeacherNames})
-            console.log({mergedGroups})
-            console.log(Object.entries(mergedGroups).filter(([k, v]) => v.length > 1).map(([k, v]) => v).flat())
-          }}
-          style={{ margin: 16 }}
+        {/* 添加学生弹窗 */}
+        <Modal
+          title="添加学生"
+          open={addStudentModalVisible}
+          onOk={handleAddNewStudent}
+          onCancel={() => setAddStudentModalVisible(false)}
+          okText="确定"
+          cancelText="取消"
         >
-          测试 Antd Message
-        </Button>
+          <Form layout="vertical">
+            <Form.Item label="学生姓名" required>
+              <Input
+                value={newStudentName}
+                onChange={e => setNewStudentName(e.target.value)}
+                placeholder="请输入学生姓名"
+                autoFocus
+              />
+            </Form.Item>
+            {/* 新增：选择顾问老师 */}
+            <Form.Item label="选择顾问老师（可选）">
+              <Select
+                allowClear
+                showSearch
+                placeholder="请选择顾问老师"
+                options={Object.keys(advisorStudentMap).map(name => ({ label: name, value: name }))}
+                value={addStudentAdvisor}
+                onChange={setAddStudentAdvisor}
+                style={{ width: '100%' }}
+              />
+            </Form.Item>
+          </Form>
+        </Modal>
+
+        <Modal
+          title="搜索结果"
+          open={searchVisible}
+          onCancel={() => setSearchVisible(false)}
+          footer={null}
+        >
+          <Input.Search
+            placeholder="输入学生姓名"
+            onSearch={handleSearch}
+            style={{ marginBottom: 16 }}
+          />
+          <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+            <List
+              dataSource={searchResults}
+              renderItem={item => (
+                <List.Item>
+                  <div>
+                    <strong>老师：</strong> {item.teacher}
+                    <br />
+                    <strong>时间段：</strong> {item.timeSlot}
+                    <br />
+                    <strong>学生：</strong> {item.students.join(', ')}
+                  </div>
+                </List.Item>
+              )}
+            />
+          </div>
+        </Modal>
     </div>
     </ConfigProvider>
   );

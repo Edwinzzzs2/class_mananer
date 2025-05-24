@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { connection } = require('../db');
+const { pool } = require('../db');
 const axios = require('axios');
 const XLSX = require('xlsx');
 const kdocsExport = require('./kdocsExport');
-
+const { saveExcelData } = require('../utils/logOperation');
 // 金山文档配置
 const WPS_CONFIG = {
   appId: process.env.WPS_APP_ID || '', // 从环境变量获取 APPID
@@ -14,35 +14,61 @@ const WPS_CONFIG = {
 };
 
 // 刷新 access_token
-async function refreshAccessToken() {
-  try {
-    const response = await axios.post('https://account.wps.cn/oauth2/token', {
-      grant_type: 'refresh_token',
-      appid: WPS_CONFIG.appId,
-      appkey: WPS_CONFIG.appKey,
-      refresh_token: WPS_CONFIG.refreshToken
-    });
+// async function refreshAccessToken() {
+//   try {
+//     const response = await axios.post('https://account.wps.cn/oauth2/token', {
+//       grant_type: 'refresh_token',
+//       appid: WPS_CONFIG.appId,
+//       appkey: WPS_CONFIG.appKey,
+//       refresh_token: WPS_CONFIG.refreshToken
+//     });
 
-    if (response.data && response.data.access_token) {
-      // 更新环境变量中的 token
-      process.env.WPS_ACCESS_TOKEN = response.data.access_token;
-      process.env.WPS_REFRESH_TOKEN = response.data.refresh_token;
-      WPS_CONFIG.accessToken = response.data.access_token;
-      WPS_CONFIG.refreshToken = response.data.refresh_token;
-      return true;
+//     if (response.data && response.data.access_token) {
+//       // 更新环境变量中的 token
+//       process.env.WPS_ACCESS_TOKEN = response.data.access_token;
+//       process.env.WPS_REFRESH_TOKEN = response.data.refresh_token;
+//       WPS_CONFIG.accessToken = response.data.access_token;
+//       WPS_CONFIG.refreshToken = response.data.refresh_token;
+//       return true;
+//     }
+//     return false;
+//   } catch (error) {
+//     console.error('刷新 access_token 失败:', error);
+//     return false;
+//   }
+// }
+
+const getNowDatetime = () => {
+  // 写入北京时间（东八区）
+  const d = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+};
+
+// 写日志时增加设备指纹信息
+function logOperation(action, req, detailObj, callback) {
+  const clientIp = req.headers['x-forwarded-for'] || req.ip;
+  const userAgent = req.headers['user-agent'] || '';
+  const refererHeader = req.headers['referer'] || '';
+  pool.query(
+    'INSERT INTO operation_log (schedule_id, action, user, detail, ip, user_agent, referer) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [null, action, null, JSON.stringify(detailObj), clientIp, userAgent, refererHeader],
+    (error, results) => {
+      if (error) {
+        console.error('写入操作日志失败:', error);
+        callback && callback(error, null);
+      } else {
+        // MySQL insertId
+        callback && callback(null, results.insertId);
+      }
     }
-    return false;
-  } catch (error) {
-    console.error('刷新 access_token 失败:', error);
-    return false;
-  }
+  );
 }
 
 // 保存课程表数据
 router.post('/save', async (req, res) => {
   try {
     const { excelData, teacherStats, mergeMap, noClassMap, fileName, id, advisorStudentMap, url, title } = req.body;
-
+    const now = getNowDatetime();
     if (id) {
       // 更新操作
       const updateQuery = `
@@ -54,10 +80,11 @@ router.post('/save', async (req, res) => {
             advisor_student_map = ?,
             file_name = ?,
             url = ?,
-            title = ?
+            title = ?,
+            updatetime = ?
         WHERE id = ?`;
 
-      connection.query(updateQuery, [
+      pool.query(updateQuery, [
         JSON.stringify(excelData),
         JSON.stringify(teacherStats),
         JSON.stringify(mergeMap),
@@ -66,6 +93,7 @@ router.post('/save', async (req, res) => {
         fileName,
         url,
         title,
+        now,
         id
       ], (error, results) => {
         if (error) {
@@ -75,45 +103,56 @@ router.post('/save', async (req, res) => {
             message: '更新课程表失败'
           });
         }
-
-        return res.json({
-          code: 0,
-          message: '更新成功',
-          scheduleId: id
+        // 新增：写入操作日志，带接口路径
+        logOperation('save', req, { url: req.originalUrl, body: req.body }, (err, logId) => {
+          if (!err) {
+            saveExcelData(logId, id, excelData, 'save', null);
+            return res.json({
+              code: 0,
+              message: '更新成功',
+              scheduleId: id
+            });
+          }
         });
       });
-    } else {
-      // 新建操作
-      const insertQuery = `
-        INSERT INTO schedules 
-        (excel_data, teacher_stats, merge_map, no_class_map, advisor_student_map, file_name, url, title)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+      return;
+    }
+    // 新建操作
+    const insertQuery = `
+      INSERT INTO schedules 
+      (excel_data, teacher_stats, merge_map, no_class_map, advisor_student_map, file_name, url, title, updatetime)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
-      connection.query(insertQuery, [
-        JSON.stringify(excelData),
-        JSON.stringify(teacherStats),
-        JSON.stringify(mergeMap),
-        JSON.stringify(noClassMap),
-        JSON.stringify(advisorStudentMap || {}),
-        fileName,
-        url,
-        title
-      ], (error, results) => {
-        if (error) {
-          console.error('保存课程表失败:', error);
-          return res.status(500).json({
-            code: 500,
-            message: '保存课程表失败'
+    pool.query(insertQuery, [
+      JSON.stringify(excelData),
+      JSON.stringify(teacherStats),
+      JSON.stringify(mergeMap),
+      JSON.stringify(noClassMap),
+      JSON.stringify(advisorStudentMap || {}),
+      fileName,
+      url,
+      title,
+      now
+    ], (error, results) => {
+      if (error) {
+        console.error('保存课程表失败:', error);
+        return res.status(500).json({
+          code: 500,
+          message: '保存课程表失败'
+        });
+      }
+      // 新增：写入操作日志，带接口路径
+      logOperation('save', req, { url: req.originalUrl, body: req.body }, (err, logId) => {
+        if (!err) {
+          saveExcelData(logId, results.insertId, excelData, 'save', null);
+          return res.json({
+            code: 0,
+            message: '保存成功',
+            scheduleId: results.insertId
           });
         }
-
-        return res.json({
-          code: 0,
-          message: '保存成功',
-          scheduleId: results.insertId
-        });
       });
-    }
+    });
   } catch (error) {
     console.error('保存课程表失败:', error);
     res.status(500).json({
@@ -130,8 +169,7 @@ router.get('/detail', async (req, res) => {
       SELECT * FROM schedules 
       ORDER BY import_time DESC 
       LIMIT 1`;
-
-    connection.query(query, (error, results) => {
+    pool.query(query, (error, results) => {
       if (error) {
         console.error('获取课程表失败:', error);
         return res.status(500).json({
@@ -139,28 +177,32 @@ router.get('/detail', async (req, res) => {
           message: '获取课程表失败'
         });
       }
-
       if (!results || results.length === 0) {
         return res.json({
           code: 0,
           data: null
         });
       }
-
       const schedule = results[0];
-      res.json({
-        code: 0,
-        data: {
-          id: schedule.id,
-          excelData: JSON.parse(schedule.excel_data),
-          teacherStats: JSON.parse(schedule.teacher_stats),
-          mergeMap: JSON.parse(schedule.merge_map),
-          noClassMap: JSON.parse(schedule.no_class_map),
-          advisorStudentMap: schedule.advisor_student_map ? JSON.parse(schedule.advisor_student_map) : {},
-          fileName: schedule.file_name,
-          importTime: schedule.import_time,
-          url: schedule.url,
-          title: schedule.title || ''
+      // 新增：写入操作日志，带接口路径
+      logOperation('fetch', req, { url: req.originalUrl }, (err, logId) => {
+        if (!err) {
+          res.json({
+            code: 0,
+            data: {
+              id: schedule.id,
+              excelData: JSON.parse(schedule.excel_data),
+              teacherStats: JSON.parse(schedule.teacher_stats),
+              mergeMap: JSON.parse(schedule.merge_map),
+              noClassMap: JSON.parse(schedule.no_class_map),
+              advisorStudentMap: schedule.advisor_student_map ? JSON.parse(schedule.advisor_student_map) : {},
+              fileName: schedule.file_name,
+              importTime: schedule.import_time,
+              updatetime: schedule.updatetime,
+              url: schedule.url,
+              title: schedule.title || ''
+            }
+          });
         }
       });
     });
@@ -228,12 +270,29 @@ router.post('/parse-wps', async (req, res) => {
       const worksheet = workbook.Sheets[firstSheetName];
       const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
       const filteredData = data.filter(row => row.some(cell => cell !== null && cell !== ''));
-      return res.json({ code: 0, message: '解析成功', data: filteredData });
+      // 新增：写入操作日志，action=parse-wps
+      logOperation('parse-wps', req, { url: req.originalUrl, body: req.body }, (err, logId) => {
+        if (!err) {
+          saveExcelData(logId, null, filteredData, 'parse-wps', null);
+          return res.json({ code: 0, message: '解析成功', data: filteredData });
+        }
+      });
     } catch (e) {
-      return res.status(500).json({ code: 500, message: '下载或解析Excel失败', detail: e.message });
+      // 新增：写入操作日志，action=parse-wps，失败
+      logOperation('parse-wps', req, { url: req.originalUrl, body: req.body, error: e.message }, (err, logId) => {
+        if (!err) {
+          saveExcelData(logId, null, null, 'parse-wps', e.message);
+          return res.status(500).json({ code: 500, message: '下载或解析Excel失败', detail: e.message });
+        }
+      });
     }
   } catch (error) {
-    res.status(500).json({ code: 500, message: '解析金山在线云文档失败: ' + error.message });
+    logOperation('parse-wps', req, { url: req.originalUrl, body: req.body, error: error.message }, (err, logId) => {
+      if (!err) {
+        saveExcelData(logId, null, null, 'parse-wps', error.message);
+        res.status(500).json({ code: 500, message: '解析金山在线云文档失败: ' + error.message });
+      }
+    });
   }
 });
 
